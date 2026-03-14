@@ -6,26 +6,6 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-  
-  datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
-    username: ${SPRING_DATASOURCE_USERNAME:sa}
-    password: ${SPRING_DATASOURCE_PASSWORD:}
-    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.h2.Driver}
-    
-  jpa:
-    hibernate:
-      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:create-drop}
-    properties:
-      hibernate:
-        dialect: ${SPRING_JPA_DATABASE_PLATFORM:org.hibernate.dialect.H2Dialect}
-        format_sql: true
-        show_sql: true
-    open-in-view: false
-    
-  h2:
-    console:
-      enabled: ${H2_CONSOLE_ENABLED:false}
     
 server:
   port: ${PORT:8080}
@@ -33,5 +13,4 @@ server:
 logging:
   level:
     com.example.hdb: INFO
-    org.hibernate.SQL: INFO
     org.springframework.web: INFO
