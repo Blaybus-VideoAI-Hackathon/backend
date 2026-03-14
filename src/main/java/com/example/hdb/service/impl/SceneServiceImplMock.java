@@ -7,6 +7,7 @@ import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.SceneStatus;
 import com.example.hdb.service.SceneService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Primary
 @Slf4j
 public class SceneServiceImplMock implements SceneService {
 
