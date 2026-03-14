@@ -12,14 +12,12 @@ import com.example.hdb.repository.SceneRepository;
 import com.example.hdb.service.SceneService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class SceneServiceImpl implements SceneService {
 
     private final SceneRepository sceneRepository;
@@ -47,7 +45,6 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public SceneResponse getSceneById(Long id) {
         Scene scene = sceneRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
@@ -55,7 +52,6 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<SceneResponse> getScenesByProjectId(Long projectId) {
         projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
@@ -67,7 +63,6 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<SceneResponse> getScenesByProjectIdOrderByOrder(Long projectId) {
         projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
@@ -79,7 +74,6 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<SceneResponse> getScenesByStatus(String status) {
         SceneStatus sceneStatus;
         try {
