@@ -4,7 +4,6 @@ import com.example.hdb.dto.request.ProjectCreateRequest;
 import com.example.hdb.dto.response.ApiResponse;
 import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.dto.response.SceneResponse;
-import com.example.hdb.service.AiService;
 import com.example.hdb.service.ProjectService;
 import com.example.hdb.service.SceneService;
 import jakarta.validation.Valid;
@@ -23,7 +22,6 @@ public class ProjectController {
 
     private final ProjectService projectService;
     private final SceneService sceneService;
-    private final AiService aiService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<ProjectResponse>> createProject(@Valid @RequestBody ProjectCreateRequest request) {
@@ -44,22 +42,9 @@ public class ProjectController {
         return ResponseEntity.ok(ApiResponse.success("Idea input successfully", null));
     }
 
-    @PostMapping("/{projectId}/plan")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> generateAiPlan(@PathVariable Long projectId) {
-        List<Map<String, Object>> plans = aiService.generatePlanningIdeas("Generate planning ideas for project");
-        return ResponseEntity.ok(ApiResponse.success("AI plan generated successfully", plans));
-    }
-
     @GetMapping("/{projectId}/scenes")
     public ResponseEntity<ApiResponse<List<SceneResponse>>> getProjectScenes(@PathVariable Long projectId) {
         List<SceneResponse> scenes = sceneService.getScenesByProjectIdOrderByOrder(projectId);
         return ResponseEntity.ok(ApiResponse.success(scenes));
-    }
-
-    @PostMapping("/{projectId}/scenes/generate")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> generateScenes(@PathVariable Long projectId) {
-        List<Map<String, Object>> scenes = aiService.generateScenes("Generate scenes for project");
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Scenes generated successfully", scenes));
     }
 }

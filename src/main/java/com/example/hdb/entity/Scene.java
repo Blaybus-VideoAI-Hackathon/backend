@@ -32,10 +32,10 @@ public class Scene {
     @Column(columnDefinition = "TEXT")
     private String description;
     
-    @Column(columnDefinition = "JSON")
-    private String coreElements;
+    @Column(columnDefinition = "TEXT")
+    private String summary;
     
-    @Column(columnDefinition = "JSON")
+    @Column(columnDefinition = "TEXT")
     private String optionalElements;
     
     @Column(name = "image_prompt", columnDefinition = "TEXT")

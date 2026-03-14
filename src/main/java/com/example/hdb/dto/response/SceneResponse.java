@@ -16,7 +16,7 @@ public class SceneResponse {
     private Integer sceneOrder;
     private String title;
     private String description;
-    private String coreElements;
+    private String summary;
     private String optionalElements;
     private String imagePrompt;
     private String videoPrompt;
@@ -33,7 +33,7 @@ public class SceneResponse {
                 .sceneOrder(scene.getSceneOrder())
                 .title(scene.getTitle())
                 .description(scene.getDescription())
-                .coreElements(scene.getCoreElements())
+                .summary(scene.getSummary())
                 .optionalElements(scene.getOptionalElements())
                 .imagePrompt(scene.getImagePrompt())
                 .videoPrompt(scene.getVideoPrompt())

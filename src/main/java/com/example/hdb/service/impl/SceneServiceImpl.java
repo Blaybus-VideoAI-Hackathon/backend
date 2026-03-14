@@ -35,7 +35,7 @@ public class SceneServiceImpl implements SceneService {
                 .sceneOrder(request.getSceneOrder())
                 .title(request.getTitle())
                 .description(request.getDescription())
-                .coreElements(request.getCoreElements())
+                .summary(request.getSummary())
                 .optionalElements(request.getOptionalElements())
                 .imagePrompt(request.getImagePrompt())
                 .videoPrompt(request.getVideoPrompt())
@@ -108,7 +108,7 @@ public class SceneServiceImpl implements SceneService {
         scene.setSceneOrder(request.getSceneOrder());
         scene.setTitle(request.getTitle());
         scene.setDescription(request.getDescription());
-        scene.setCoreElements(request.getCoreElements());
+        scene.setSummary(request.getSummary());
         scene.setOptionalElements(request.getOptionalElements());
         scene.setImagePrompt(request.getImagePrompt());
         scene.setVideoPrompt(request.getVideoPrompt());

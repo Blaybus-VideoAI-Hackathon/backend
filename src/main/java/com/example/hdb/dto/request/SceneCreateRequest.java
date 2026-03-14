@@ -28,7 +28,9 @@ public class SceneCreateRequest {
     @Size(max = 2000, message = "Description must be less than 2000 characters")
     private String description;
     
-    private String coreElements;
+    @Size(max = 2000, message = "Summary must be less than 2000 characters")
+    private String summary;
+    
     private String optionalElements;
     
     @Size(max = 2000, message = "Image prompt must be less than 2000 characters")

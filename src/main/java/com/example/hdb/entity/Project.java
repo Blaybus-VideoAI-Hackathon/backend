@@ -32,6 +32,9 @@ public class Project {
     @Column(length = 20)
     private String ratio;
     
+    @Column(columnDefinition = "TEXT")
+    private String coreElements;
+    
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PlanningStatus planningStatus;

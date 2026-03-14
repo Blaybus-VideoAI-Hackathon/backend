@@ -13,6 +13,11 @@ public enum ErrorCode {
     INVALID_SCENE_ORDER("SCENE_002", "Invalid scene order"),
     INVALID_SCENE_STATUS("SCENE_003", "Invalid scene status"),
     
+    LLM_SERVICE_ERROR("LLM_001", "LLM service error"),
+    LLM_GENERATION_FAILED("LLM_002", "LLM generation failed"),
+    INVALID_CORE_ELEMENTS("LLM_003", "Invalid core elements"),
+    INVALID_SCENE_REQUEST("LLM_004", "Invalid scene request"),
+    
     VALIDATION_ERROR("VALIDATION_001", "Validation error"),
     INTERNAL_SERVER_ERROR("SERVER_001", "Internal server error");
     
