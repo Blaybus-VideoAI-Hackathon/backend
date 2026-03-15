@@ -6,7 +6,7 @@ import com.example.hdb.entity.PlanningStatus;
 import com.example.hdb.entity.Project;
 import com.example.hdb.service.ProjectService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-@Primary
+@Profile("render")
 @Slf4j
 public class ProjectServiceImplMock implements ProjectService {
 

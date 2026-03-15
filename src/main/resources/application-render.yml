@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: hdb-backend
+  
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+    
+server:
+  port: ${PORT:8080}
+
+logging:
+  level:
+    com.example.hdb: INFO
+    org.springframework.web: INFO
