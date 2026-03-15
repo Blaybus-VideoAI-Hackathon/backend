@@ -6,6 +6,7 @@ import com.example.hdb.dto.response.*;
 import com.example.hdb.enums.QuickActionType;
 import com.example.hdb.service.LlmService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -14,6 +15,7 @@ import java.util.Random;
 import java.util.UUID;
 
 @Service
+@Primary
 @Slf4j
 public class MockLlmServiceImpl implements LlmService {
 
