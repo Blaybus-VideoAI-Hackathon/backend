@@ -15,7 +15,6 @@ import java.util.Random;
 import java.util.UUID;
 
 @Service
-@Profile("no-db")
 @Slf4j
 public class LlmServiceImplNoDb implements LlmService {
 
