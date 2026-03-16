@@ -2,7 +2,7 @@ spring:
   application:
     name: hdb-backend
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:default}
+    active: ${SPRING_PROFILES_ACTIVE:no-db}
     
 server:
   port: ${PORT:8080}
