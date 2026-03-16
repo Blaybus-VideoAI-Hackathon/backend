@@ -15,15 +15,15 @@ import java.util.Random;
 import java.util.UUID;
 
 @Service
-@Profile("!no-db")
+@Profile("no-db")
 @Slf4j
-public class LlmServiceImpl implements LlmService {
+public class LlmServiceImplNoDb implements LlmService {
 
     private final Random random = new Random();
 
     @Override
     public LlmPlanResponse generatePlan(LlmPlanRequest request) {
-        log.info("Mock LLM: Generating plan for project: {}", request.getProject().getTitle());
+        log.info("No-DB LLM: Generating plan for project: {}", request.getProject().getTitle());
 
         CoreElements coreElements = CoreElements.builder()
                 .purpose(request.getProject().getPurpose() != null ? request.getProject().getPurpose() : "영상 제작")
@@ -55,7 +55,7 @@ public class LlmServiceImpl implements LlmService {
         );
 
         return LlmPlanResponse.builder()
-                .displayText("프로젝트 기획안이 성공적으로 생성되었습니다. 3가지 스토리 옵션 중 하나를 선택해주세요.")
+                .displayText("No-DB: 프로젝트 기획안이 성공적으로 생성되었습니다. 3가지 스토리 옵션 중 하나를 선택해주세요.")
                 .coreElements(coreElements)
                 .meta(LlmPlanResponse.Meta.builder()
                         .storyOptions(storyOptions)
@@ -65,7 +65,7 @@ public class LlmServiceImpl implements LlmService {
 
     @Override
     public LlmScenesResponse generateScenes(LlmScenesRequest request) {
-        log.info("Mock LLM: Generating scenes for duration: {}", request.getCoreElements().getDuration());
+        log.info("No-DB LLM: Generating scenes for duration: {}", request.getCoreElements().getDuration());
 
         int sceneCount = calculateSceneCount(request.getCoreElements().getDuration());
 
@@ -73,51 +73,51 @@ public class LlmServiceImpl implements LlmService {
                 SceneInfo.builder()
                         .sceneId(UUID.randomUUID().toString())
                         .order(1)
-                        .summary("오프닝 - 주인공 소개")
+                        .summary("No-DB 오프닝 - 주인공 소개")
                         .build(),
                 SceneInfo.builder()
                         .sceneId(UUID.randomUUID().toString())
                         .order(2)
-                        .summary("전개 - 문제 제기")
+                        .summary("No-DB 전개 - 문제 제기")
                         .build(),
                 SceneInfo.builder()
                         .sceneId(UUID.randomUUID().toString())
                         .order(3)
-                        .summary("절정 - 갈등 해결")
+                        .summary("No-DB 절정 - 갈등 해결")
                         .build(),
                 SceneInfo.builder()
                         .sceneId(UUID.randomUUID().toString())
                         .order(4)
-                        .summary("결말 - 마무리")
+                        .summary("No-DB 결말 - 마무리")
                         .build(),
                 SceneInfo.builder()
                         .sceneId(UUID.randomUUID().toString())
                         .order(5)
-                        .summary("엔딩 - 여운")
+                        .summary("No-DB 엔딩 - 여운")
                         .build()
         ).subList(0, sceneCount);
 
         return LlmScenesResponse.builder()
-                .displayText(String.format("%d개의 Scene이 성공적으로 생성되었습니다.", sceneCount))
+                .displayText(String.format("No-DB: %d개의 Scene이 성공적으로 생성되었습니다.", sceneCount))
                 .scenes(scenes)
                 .build();
     }
 
     @Override
     public LlmSceneDesignResponse designScene(LlmSceneDesignRequest request) {
-        log.info("Mock LLM: Designing scene: {}", request.getScene().getSummary());
+        log.info("No-DB LLM: Designing scene: {}", request.getScene().getSummary());
 
         OptionalElements optionalElements = OptionalElements.builder()
-                .action("자연스러운 움직임")
-                .pose("정면을 바라보는 자세")
-                .camera("중정면 샷")
-                .cameraMotion("천천히 줌인")
-                .lighting("부드러운 자연광")
-                .mood("차분한 분위기")
+                .action("No-DB 자연스러운 움직임")
+                .pose("No-DB 정면을 바라보는 자세")
+                .camera("No-DB 중정면 샷")
+                .cameraMotion("No-DB 천천히 줌인")
+                .lighting("No-DB 부드러운 자연광")
+                .mood("No-DB 차분한 분위기")
                 .timeOfDay("낮")
-                .effects(Arrays.asList("부드러운 전환 효과"))
-                .backgroundCharacters("주변 사람들")
-                .environmentDetail("현대적인 실내")
+                .effects(Arrays.asList("No-DB 부드러운 전환 효과"))
+                .backgroundCharacters("No-DB 주변 사람들")
+                .environmentDetail("No-DB 현대적인 실내")
                 .build();
 
         List<QuickAction> quickActions = Arrays.asList(
@@ -139,10 +139,10 @@ public class LlmServiceImpl implements LlmService {
         );
 
         return LlmSceneDesignResponse.builder()
-                .displayText("Scene 디자인이 완료되었습니다. 퀵 액션으로 쉽게 수정할 수 있습니다.")
+                .displayText("No-DB: Scene 디자인이 완료되었습니다. 퀵 액션으로 쉽게 수정할 수 있습니다.")
                 .optionalElements(optionalElements)
-                .imagePrompt("Professional portrait of main character in modern setting, soft lighting, natural pose")
-                .videoPrompt("Medium shot of character walking in modern urban environment, smooth camera movement")
+                .imagePrompt("No-DB Professional portrait of main character in modern setting, soft lighting, natural pose")
+                .videoPrompt("No-DB Medium shot of character walking in modern urban environment, smooth camera movement")
                 .meta(LlmSceneDesignResponse.Meta.builder()
                         .quickActions(quickActions)
                         .build())
@@ -151,26 +151,26 @@ public class LlmServiceImpl implements LlmService {
 
     @Override
     public LlmSceneEditResponse editScene(LlmSceneEditRequest request) {
-        log.info("Mock LLM: Editing scene with request: {}", request.getUserEditText());
+        log.info("No-DB LLM: Editing scene with request: {}", request.getUserEditText());
 
         OptionalElements updatedElements = OptionalElements.builder()
-                .action("더 역동적인 움직임")
-                .pose("측면을 바라보는 자세")
-                .camera("측면 샷")
-                .cameraMotion("빠른 패닝")
-                .lighting("드라마틱한 조명")
-                .mood("긴장감 넘치는 분위기")
+                .action("No-DB 더 역동적인 움직임")
+                .pose("No-DB 측면을 바라보는 자세")
+                .camera("No-DB 측면 샷")
+                .cameraMotion("No-DB 빠른 패닝")
+                .lighting("No-DB 드라마틱한 조명")
+                .mood("No-DB 긴장감 넘치는 분위기")
                 .timeOfDay("저녁")
-                .effects(Arrays.asList("강한 전환 효과", "모션 블러"))
-                .backgroundCharacters("없음")
-                .environmentDetail("어두운 거리")
+                .effects(Arrays.asList("No-DB 강한 전환 효과", "No-DB 모션 블러"))
+                .backgroundCharacters("No-DB 없음")
+                .environmentDetail("No-DB 어두운 거리")
                 .build();
 
         return LlmSceneEditResponse.builder()
-                .displayText("사용자 요청에 따라 Scene이 성공적으로 수정되었습니다.")
+                .displayText("No-DB: 사용자 요청에 따라 Scene이 성공적으로 수정되었습니다.")
                 .optionalElements(updatedElements)
-                .imagePrompt("Dramatic side profile of character in dark street, intense lighting, dynamic pose")
-                .videoPrompt("Fast panning shot of character running through urban night environment, dramatic lighting")
+                .imagePrompt("No-DB Dramatic side profile of character in dark street, intense lighting, dynamic pose")
+                .videoPrompt("No-DB Fast panning shot of character running through urban night environment, dramatic lighting")
                 .build();
     }
 

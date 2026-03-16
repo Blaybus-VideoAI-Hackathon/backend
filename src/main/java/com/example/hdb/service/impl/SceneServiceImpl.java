@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Profile("!render")
+@Profile("!no-db")
 public class SceneServiceImpl implements SceneService {
 
     private final SceneRepository sceneRepository;

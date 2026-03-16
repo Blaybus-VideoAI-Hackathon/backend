@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Profile("!render")
+@Profile("!no-db")
 public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectRepository projectRepository;
