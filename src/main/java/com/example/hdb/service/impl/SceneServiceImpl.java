@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Primary
 public class SceneServiceImpl implements SceneService {
 
     private final SceneRepository sceneRepository;
