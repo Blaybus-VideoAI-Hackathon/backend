@@ -80,6 +80,29 @@ public class ProjectServiceImplMock implements ProjectService {
     }
 
     @Override
+    public List<ProjectResponse> getProjectsByUserId(Long userId) {
+        log.info("Mock: Getting projects for user: {}", userId);
+        
+        List<ProjectResponse> projects = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            Project mockProject = Project.builder()
+                    .id((long) i)
+                    .title("Mock Project " + i + " for User " + userId)
+                    .idea("Mock idea for project " + i)
+                    .style("mock-style")
+                    .ratio("16:9")
+                    .planningStatus(PlanningStatus.DRAFT)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .scenes(new ArrayList<>())
+                    .build();
+            projects.add(ProjectResponse.from(mockProject));
+        }
+        
+        return projects;
+    }
+
+    @Override
     public ProjectResponse updateProject(Long id, ProjectCreateRequest request) {
         log.info("Mock: Updating project with id: {}", id);
         
