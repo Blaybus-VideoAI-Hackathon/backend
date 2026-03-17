@@ -22,18 +22,19 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
-                // Swagger 허용
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
+                // Swagger 완전 허용
+                .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
                 // 테스트 엔드포인트 허용
                 .requestMatchers("/api/test/**").permitAll()
-                // 로그인 API 허용
-                .requestMatchers("/api/auth/login").permitAll()
+                // 인증 관련 API 전체 허용
+                .requestMatchers("/api/auth/**").permitAll()
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
             )
-            // 기본 로그인 페이지 비활성화
+            // 기본 로그인 페이지 완전 비활성화
             .formLogin(AbstractHttpConfigurer::disable)
-            // HTTP Basic 비활성화
+            // HTTP Basic 완전 비활성화
             .httpBasic(AbstractHttpConfigurer::disable);
 
         return http.build();
