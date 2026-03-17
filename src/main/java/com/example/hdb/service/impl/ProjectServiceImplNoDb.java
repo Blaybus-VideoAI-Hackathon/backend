@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Profile("no-db")
 @Slf4j
 public class ProjectServiceImplNoDb implements ProjectService {
 
