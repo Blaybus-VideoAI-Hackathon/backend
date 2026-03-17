@@ -2,8 +2,6 @@
 .gradle/
 build/
 !build/libs/
-!build/classes/
-!build/resources/
 
 # IntelliJ IDEA
 .idea/
@@ -50,3 +48,6 @@ coverage/
 Dockerfile*
 docker-compose*
 .dockerignore
+
+# IMPORTANT: Keep src directory for Docker build
+# src/ should NOT be ignored

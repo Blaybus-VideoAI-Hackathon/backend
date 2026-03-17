@@ -8,7 +8,12 @@ group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 
 java {
-    sourceCompatibility = '17'
+    sourceCompatibility = '21'
+}
+
+// Spring Boot main class 명시적 설정
+springBoot {
+    mainClass = 'com.example.hdb.HdbApplication'
 }
 
 configurations {
@@ -49,4 +54,11 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// bootJar task 명시적 설정
+bootJar {
+    mainClass = 'com.example.hdb.HdbApplication'
+    archiveBaseName = 'hdb-backend'
+    archiveVersion = '0.0.1-SNAPSHOT'
 }
