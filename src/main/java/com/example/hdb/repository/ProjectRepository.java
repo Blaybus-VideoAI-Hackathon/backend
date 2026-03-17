@@ -11,4 +11,6 @@ import java.util.List;
 public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByPlanningStatus(PlanningStatus planningStatus);
     List<Project> findByPlanningStatusOrderByCreatedAtDesc(PlanningStatus planningStatus);
+    List<Project> findByUserId(Long userId);
+    List<Project> findByUserIdOrderByCreatedAtDesc(Long userId);
 }

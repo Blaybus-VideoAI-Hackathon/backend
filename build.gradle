@@ -26,11 +26,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     
+    // Spring Security (BCrypt용)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    
     // Swagger/OpenAPI
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
     
     // MySQL Database
     implementation 'com.mysql:mysql-connector-j'
+    runtimeOnly 'com.mysql:mysql-connector-j'
     
     // Lombok
     compileOnly 'org.projectlombok:lombok'

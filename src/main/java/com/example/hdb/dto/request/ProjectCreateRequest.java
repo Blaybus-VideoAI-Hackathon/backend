@@ -2,6 +2,7 @@ package com.example.hdb.dto.request;
 
 import com.example.hdb.entity.PlanningStatus;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
@@ -11,6 +12,9 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class ProjectCreateRequest {
+    
+    @NotNull(message = "사용자 ID는 필수입니다.")
+    private Long userId;
     
     @NotBlank(message = "Project title is required")
     @Size(max = 200, message = "Project title must be less than 200 characters")

@@ -4,9 +4,11 @@ import com.example.hdb.dto.request.ProjectCreateRequest;
 import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.entity.PlanningStatus;
 import com.example.hdb.entity.Project;
+import com.example.hdb.entity.User;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectRepository;
+import com.example.hdb.repository.UserRepository;
 import com.example.hdb.service.ProjectService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
@@ -21,10 +23,15 @@ import java.util.stream.Collectors;
 public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectRepository projectRepository;
+    private final UserRepository userRepository;
 
     @Override
     public ProjectResponse createProject(ProjectCreateRequest request) {
+        User user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
         Project project = Project.builder()
+                .user(user)
                 .title(request.getTitle())
                 .idea(request.getIdea())
                 .style(request.getStyle())
@@ -53,6 +60,14 @@ public class ProjectServiceImpl implements ProjectService {
         }
         
         List<Project> projects = projectRepository.findByPlanningStatusOrderByCreatedAtDesc(planningStatus);
+        return projects.stream()
+                .map(ProjectResponse::from)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ProjectResponse> getProjectsByUserId(Long userId) {
+        List<Project> projects = projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
         return projects.stream()
                 .map(ProjectResponse::from)
                 .collect(Collectors.toList());

@@ -13,6 +13,9 @@ public enum ErrorCode {
     INVALID_SCENE_ORDER("SCENE_002", "Invalid scene order"),
     INVALID_SCENE_STATUS("SCENE_003", "Invalid scene status"),
     
+    USER_NOT_FOUND("USER_001", "User not found"),
+    INVALID_PASSWORD("USER_002", "Invalid password"),
+    
     LLM_SERVICE_ERROR("LLM_001", "LLM service error"),
     LLM_GENERATION_FAILED("LLM_002", "LLM generation failed"),
     INVALID_CORE_ELEMENTS("LLM_003", "Invalid core elements"),

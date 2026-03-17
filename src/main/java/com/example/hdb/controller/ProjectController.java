@@ -27,10 +27,17 @@ public class ProjectController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<ProjectResponse>> createProject(@Valid @RequestBody ProjectCreateRequest request) {
-        log.info("Creating project with title: {}", request.getTitle());
+        log.info("Creating project with title: {} for user: {}", request.getTitle(), request.getUserId());
         ProjectResponse response = projectService.createProject(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Project created successfully", response));
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<ProjectResponse>>> getProjectsByUserId(@RequestParam Long userId) {
+        log.info("Getting projects for user: {}", userId);
+        List<ProjectResponse> projects = projectService.getProjectsByUserId(userId);
+        return ResponseEntity.ok(ApiResponse.success(projects));
     }
 
     @GetMapping("/{projectId}")
