@@ -3,11 +3,8 @@ package com.example.hdb.config;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.Contact;
-import io.swagger.v3.oas.models.servers.Server;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.util.List;
 
 @Configuration
 public class SwaggerConfig {
@@ -21,11 +18,7 @@ public class SwaggerConfig {
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("HDB Team")
-                                .email("hdb@example.com")))
-                .servers(List.of(
-                        new Server()
-                                .url("http://localhost:8080")
-                                .description("Development Server")
-                ));
+                                .email("hdb@example.com")));
+        // servers 설정 제거 - 현재 접속 호스트를 자동으로 사용
     }
 }
