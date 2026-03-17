@@ -1,6 +1,3 @@
-# Render + Aiven MySQL 배포 전용 설정
-# 이 프로필은 Render 클라우드 배포에서만 사용됩니다
-
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:}
