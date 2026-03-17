@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: hdb-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
 
 logging:
   level:

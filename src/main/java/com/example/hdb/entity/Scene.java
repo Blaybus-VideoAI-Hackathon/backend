@@ -1,9 +1,8 @@
 package com.example.hdb.entity;
 
+import com.example.hdb.enums.SceneStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +13,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Scene {
+public class Scene extends BaseTimeEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -27,12 +26,6 @@ public class Scene {
     private Integer sceneOrder;
     
     @Column(nullable = false, length = 200)
-    private String title;
-    
-    @Column(columnDefinition = "TEXT")
-    private String description;
-    
-    @Column(columnDefinition = "TEXT")
     private String summary;
     
     @Column(columnDefinition = "TEXT")
@@ -53,12 +46,4 @@ public class Scene {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SceneStatus status;
-    
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
 }

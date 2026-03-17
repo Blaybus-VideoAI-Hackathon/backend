@@ -12,10 +12,14 @@ import java.time.LocalDateTime;
 @Builder
 public class ProjectResponse {
     private Long id;
+    private Long userId;
     private String title;
-    private String idea;
     private String style;
     private String ratio;
+    private String purpose;
+    private Integer duration;
+    private String ideaText;
+    private String coreElements;
     private String planningStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -23,10 +27,14 @@ public class ProjectResponse {
     public static ProjectResponse from(Project project) {
         return ProjectResponse.builder()
                 .id(project.getId())
+                .userId(project.getUser() != null ? project.getUser().getId() : null)
                 .title(project.getTitle())
-                .idea(project.getIdea())
                 .style(project.getStyle())
                 .ratio(project.getRatio())
+                .purpose(project.getPurpose())
+                .duration(project.getDuration())
+                .ideaText(project.getIdeaText())
+                .coreElements(project.getCoreElements())
                 .planningStatus(project.getPlanningStatus().name())
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())

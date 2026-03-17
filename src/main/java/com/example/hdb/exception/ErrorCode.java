@@ -1,29 +1,38 @@
 package com.example.hdb.exception;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-
-@Getter
-@RequiredArgsConstructor
 public enum ErrorCode {
+    // User 관련
+    USER_NOT_FOUND("USER_001", "사용자를 찾을 수 없습니다."),
+    INVALID_PASSWORD("USER_002", "비밀번호가 일치하지 않습니다."),
     
-    PROJECT_NOT_FOUND("PROJECT_001", "Project not found"),
+    // Project 관련
+    PROJECT_NOT_FOUND("PROJECT_001", "프로젝트를 찾을 수 없습니다."),
+    SCENE_ORDER_DUPLICATE("PROJECT_002", "씬 순서가 중복됩니다."),
     
-    SCENE_NOT_FOUND("SCENE_001", "Scene not found"),
-    INVALID_SCENE_ORDER("SCENE_002", "Invalid scene order"),
-    INVALID_SCENE_STATUS("SCENE_003", "Invalid scene status"),
+    // Scene 관련
+    SCENE_NOT_FOUND("SCENE_001", "씬을 찾을 수 없습니다."),
     
-    USER_NOT_FOUND("USER_001", "User not found"),
-    INVALID_PASSWORD("USER_002", "Invalid password"),
+    // LLM 관련
+    LLM_SERVICE_ERROR("LLM_001", "LLM 서비스 오류가 발생했습니다."),
+    LLM_GENERATION_FAILED("LLM_002", "LLM 생성에 실패했습니다."),
     
-    LLM_SERVICE_ERROR("LLM_001", "LLM service error"),
-    LLM_GENERATION_FAILED("LLM_002", "LLM generation failed"),
-    INVALID_CORE_ELEMENTS("LLM_003", "Invalid core elements"),
-    INVALID_SCENE_REQUEST("LLM_004", "Invalid scene request"),
-    
-    VALIDATION_ERROR("VALIDATION_001", "Validation error"),
-    INTERNAL_SERVER_ERROR("SERVER_001", "Internal server error");
+    // 공통
+    VALIDATION_ERROR("COMMON_001", "입력값이 유효하지 않습니다."),
+    INTERNAL_SERVER_ERROR("COMMON_002", "서버 내부 오류가 발생했습니다.");
     
     private final String code;
     private final String message;
+    
+    ErrorCode(String code, String message) {
+        this.code = code;
+        this.message = message;
+    }
+    
+    public String getCode() {
+        return code;
+    }
+    
+    public String getMessage() {
+        return message;
+    }
 }

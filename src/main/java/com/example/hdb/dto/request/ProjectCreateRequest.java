@@ -1,13 +1,11 @@
 package com.example.hdb.dto.request;
 
-import com.example.hdb.entity.PlanningStatus;
+import com.example.hdb.enums.PlanningStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.*;
 
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -16,18 +14,21 @@ public class ProjectCreateRequest {
     @NotNull(message = "사용자 ID는 필수입니다.")
     private Long userId;
     
-    @NotBlank(message = "Project title is required")
-    @Size(max = 200, message = "Project title must be less than 200 characters")
+    @NotBlank(message = "프로젝트 제목을 입력해주세요.")
     private String title;
     
-    @Size(max = 2000, message = "Idea must be less than 2000 characters")
-    private String idea;
-    
-    @Size(max = 100, message = "Style must be less than 100 characters")
+    @NotBlank(message = "스타일을 선택해주세요.")
     private String style;
     
-    @Size(max = 20, message = "Ratio must be less than 20 characters")
+    @NotBlank(message = "비율을 선택해주세요.")
     private String ratio;
     
-    private PlanningStatus planningStatus;
+    private String purpose;
+    
+    private Integer duration;
+    
+    private String ideaText;
+    
+    @Builder.Default
+    private PlanningStatus planningStatus = PlanningStatus.DRAFT;
 }

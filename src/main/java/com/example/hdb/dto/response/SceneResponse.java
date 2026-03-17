@@ -14,8 +14,6 @@ public class SceneResponse {
     private Long id;
     private Long projectId;
     private Integer sceneOrder;
-    private String title;
-    private String description;
     private String summary;
     private String optionalElements;
     private String imagePrompt;
@@ -29,10 +27,8 @@ public class SceneResponse {
     public static SceneResponse from(Scene scene) {
         return SceneResponse.builder()
                 .id(scene.getId())
-                .projectId(scene.getProject().getId())
+                .projectId(scene.getProject() != null ? scene.getProject().getId() : null)
                 .sceneOrder(scene.getSceneOrder())
-                .title(scene.getTitle())
-                .description(scene.getDescription())
                 .summary(scene.getSummary())
                 .optionalElements(scene.getOptionalElements())
                 .imagePrompt(scene.getImagePrompt())

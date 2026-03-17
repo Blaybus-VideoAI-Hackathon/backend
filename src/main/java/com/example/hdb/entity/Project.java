@@ -1,9 +1,8 @@
 package com.example.hdb.entity;
 
+import com.example.hdb.enums.PlanningStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,7 +14,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Project {
+public class Project extends BaseTimeEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -27,14 +26,20 @@ public class Project {
     @Column(nullable = false, length = 200)
     private String title;
     
-    @Column(columnDefinition = "TEXT")
-    private String idea;
-    
     @Column(length = 100)
     private String style;
     
     @Column(length = 20)
     private String ratio;
+    
+    @Column(length = 500)
+    private String purpose;
+    
+    @Column
+    private Integer duration;
+    
+    @Column(columnDefinition = "TEXT")
+    private String ideaText;
     
     @Column(columnDefinition = "TEXT")
     private String coreElements;
@@ -42,14 +47,6 @@ public class Project {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PlanningStatus planningStatus;
-    
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
     
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Scene> scenes;

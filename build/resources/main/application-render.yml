@@ -1,34 +1,27 @@
 spring:
-  application:
-    name: hdb-backend
-  
+  # Render + Aiven MySQL 전용 설정
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    username: sa
-    password: 
-    driver-class-name: org.h2.Driver
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
     
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
+    show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
+        dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
-        show_sql: true
-    open-in-view: false
-    
-  h2:
-    console:
-      enabled: false
-    
-  autoconfigure:
-    exclude: []
-    
-server:
-  port: ${PORT:8080}
+
+# OpenAI API 설정
+openai:
+  api-key: ${OPENAI_API_KEY:your-openai-api-key-here}
 
 logging:
   level:
     com.example.hdb: INFO
-    org.springframework.web: INFO
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
