@@ -151,26 +151,36 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         
-        // OpenAI API 호출로 아이디어 생성
-        String ideaJson = openAIService.generateIdea(
-            request.getUserInput(), 
-            project.getStyle(), 
-            project.getRatio()
-        );
+        log.info("Project found - style: {}, ratio: {}", project.getStyle(), project.getRatio());
         
-        // JSON 파싱 및 응답 생성 (임시)
-        IdeaGenerationResponse response = IdeaGenerationResponse.builder()
-            .coreElements(ideaJson)
-            .displayText("아이디어 생성 완료")
-            .build();
-        
-        // 프로젝트에 결과 저장
-        project.setCoreElements(response.getCoreElements());
-        projectRepository.save(project);
-        
-        log.info("Project idea generated successfully for projectId: {}", projectId);
-        
-        return ApiResponse.success("프로젝트 아이디어 생성 성공", response);
+        try {
+            // OpenAI API 호출로 아이디어 생성
+            String ideaJson = openAIService.generateIdea(
+                request.getUserInput(), 
+                project.getStyle(), 
+                project.getRatio()
+            );
+            
+            log.info("OpenAI API response received: {}", ideaJson);
+            
+            // JSON 파싱 및 응답 생성 (임시)
+            IdeaGenerationResponse response = IdeaGenerationResponse.builder()
+                .coreElements(ideaJson)
+                .displayText("아이디어 생성 완료")
+                .build();
+            
+            // 프로젝트에 결과 저장
+            project.setCoreElements(response.getCoreElements());
+            projectRepository.save(project);
+            
+            log.info("Project idea generated successfully for projectId: {}", projectId);
+            
+            return ApiResponse.success("프로젝트 아이디어 생성 성공", response);
+            
+        } catch (Exception e) {
+            log.error("Failed to generate project idea for projectId: {}", projectId, e);
+            throw e;
+        }
     }
     
     @Override

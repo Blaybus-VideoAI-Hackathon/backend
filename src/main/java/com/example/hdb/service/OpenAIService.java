@@ -70,7 +70,10 @@ public class OpenAIService {
     
     private String callOpenAI(String systemPrompt, String userPrompt) {
         try {
-            log.debug("Calling OpenAI API with RestTemplate");
+            log.info("Calling OpenAI API - systemPrompt length: {}, userPrompt length: {}", 
+                    systemPrompt.length(), userPrompt.length());
+            log.debug("System prompt: {}", systemPrompt);
+            log.debug("User prompt: {}", userPrompt);
             
             // OpenAIRequest DTO 사용
             OpenAIRequest request = OpenAIRequest.builder()
@@ -82,6 +85,8 @@ public class OpenAIService {
                     .temperature(0.7)
                     .max_tokens(2000)
                     .build();
+            
+            log.info("OpenAI request prepared: model={}, messages={}", request.getModel(), request.getMessages().size());
             
             // HTTP 요청 설정
             HttpHeaders headers = new HttpHeaders();
@@ -97,29 +102,40 @@ public class OpenAIService {
                 OpenAIResponse.class
             );
             
+            log.info("OpenAI API response status: {}", response.getStatusCode());
+            log.info("OpenAI API response headers: {}", response.getHeaders());
+            
             // 응답 처리
             OpenAIResponse openAIResponse = response.getBody();
             
-            if (openAIResponse == null || 
-                openAIResponse.getChoices() == null || 
-                openAIResponse.getChoices().isEmpty()) {
-                
-                log.error("OpenAI API returned empty response");
+            if (openAIResponse == null) {
+                log.error("OpenAI API returned null response body");
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            log.info("OpenAI response ID: {}, Object: {}", openAIResponse.getId(), openAIResponse.getObject());
+            log.debug("OpenAI raw response: {}", openAIResponse);
+            
+            if (openAIResponse.getChoices() == null || openAIResponse.getChoices().isEmpty()) {
+                log.error("OpenAI API returned empty choices. Response: {}", openAIResponse);
                 throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
             
             String content = openAIResponse.getChoices().get(0).getMessage().getContent();
             
             if (content == null || content.trim().isEmpty()) {
-                log.error("OpenAI API returned empty content");
+                log.error("OpenAI API returned empty content. Response: {}", openAIResponse);
                 throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
             
-            log.debug("OpenAI API call successful");
+            log.info("OpenAI API call successful - content length: {}", content.length());
+            log.debug("OpenAI content: {}", content);
+            
             return content.trim();
             
         } catch (BusinessException e) {
             // 이미 BusinessException이면 그대로 전파
+            log.error("BusinessException in OpenAI API call: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
             log.error("Failed to call OpenAI API", e);

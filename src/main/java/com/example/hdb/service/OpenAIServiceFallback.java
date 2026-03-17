@@ -14,12 +14,17 @@ import org.springframework.stereotype.Service;
 public class OpenAIServiceFallback {
     
     public String generateIdea(String coreElements, String style, String ratio) {
-        log.warn("OpenAI API Key가 설정되지 않아 Mock 응답을 반환합니다");
-        return String.format("""
+        log.warn("OpenAI API Key가 설정되지 않아 Mock 응답을 반환합니다 - coreElements: {}, style: {}, ratio: {}", 
+                coreElements, style, ratio);
+        
+        String mockResponse = String.format("""
             {
               "idea": "Mock 아이디어: %s 스타일의 %s 비율 비디오 (핵심: %s)"
             }
             """, style, ratio, coreElements);
+            
+        log.info("Mock 응답 생성 완료: {}", mockResponse);
+        return mockResponse;
     }
     
     public String generateScenes(String idea, int sceneCount) {
