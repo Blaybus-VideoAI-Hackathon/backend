@@ -1,0 +1,52 @@
+# Gradle
+.gradle/
+build/
+!build/libs/
+!build/classes/
+!build/resources/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# Node.js (if any)
+node_modules/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Test outputs
+test-results/
+coverage/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
