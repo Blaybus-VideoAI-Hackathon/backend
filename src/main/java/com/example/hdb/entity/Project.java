@@ -50,4 +50,10 @@ public class Project extends BaseTimeEntity {
     
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Scene> scenes;
+    
+    // 기획/생성 상태를 위한 새로운 필드
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private ProjectStatus status = ProjectStatus.PLANNING;
 }

@@ -1,7 +1,7 @@
 spring:
   # Render + Aiven MySQL 전용 설정
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
+    url: ${SPRING_DATASOURCE_URL}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -12,8 +12,8 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
+    open-in-view: false
 
 # OpenAI API 설정
 openai:
@@ -25,3 +25,7 @@ logging:
     org.springframework.web: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.boot.autoconfigure: DEBUG
+    org.springframework.jdbc.datasource: DEBUG
+    com.zaxxer.hikari: DEBUG
+    org.hibernate.tool.schema.internal: DEBUG

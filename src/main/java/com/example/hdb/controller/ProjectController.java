@@ -1,164 +1,121 @@
 package com.example.hdb.controller;
 
-import com.example.hdb.dto.common.ApiResponse;
-import com.example.hdb.dto.request.CoreElementsRequest;
-import com.example.hdb.dto.request.IdeaGenerationRequest;
-import com.example.hdb.dto.request.ProjectCreateRequest;
-import com.example.hdb.dto.response.IdeaGenerationResponse;
+import com.example.hdb.dto.request.PlanCreateRequest;
+import com.example.hdb.dto.response.ApiResponse;
+import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.dto.response.ProjectResponse;
-import com.example.hdb.dto.response.SceneResponse;
-import com.example.hdb.dto.response.SceneGenerationResponse;
-import com.example.hdb.service.ProjectService;
+import com.example.hdb.entity.ProjectPlan;
+import com.example.hdb.service.PlanningService;
+import com.example.hdb.service.ProjectServiceNew;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/projects")
 @RequiredArgsConstructor
 @Slf4j
-@Validated
+@SecurityRequirement(name = "bearerAuth")
 public class ProjectController {
-    
-    private final ProjectService projectService;
-    
-    @PostMapping
+
+    private final ProjectServiceNew projectService;
+    private final PlanningService planningService;
+
     @Operation(summary = "프로젝트 생성", description = "새로운 프로젝트를 생성합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "프로젝트 생성 성공")
+    @PostMapping
     public ResponseEntity<ApiResponse<ProjectResponse>> createProject(
-            @Valid @RequestBody ProjectCreateRequest request) {
+            @Valid @RequestBody com.example.hdb.dto.request.ProjectCreateRequest request,
+            Authentication authentication) {
         
-        log.info("Creating project: {}", request.getTitle());
-        ProjectResponse response = projectService.createProject(request);
+        String loginId = authentication.getName();
+        log.info("프로젝트 생성 요청 - 사용자: {}, 제목: {}", loginId, request.getTitle());
         
-        return ResponseEntity.status(201)
-                .body(ApiResponse.success("프로젝트 생성 성공", response));
+        var project = projectService.createProject(loginId, request);
+        
+        return ResponseEntity.ok(ApiResponse.success(ProjectResponse.from(project)));
     }
-    
+
+    @Operation(summary = "사용자 프로젝트 목록", description = "로그인한 사용자의 모든 프로젝트를 조회합니다.")
     @GetMapping
-    @Operation(summary = "프로젝트 목록 조회", description = "사용자 ID로 프로젝트 목록을 조회합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "프로젝트 목록 조회 성공")
-    public ResponseEntity<ApiResponse<java.util.List<ProjectResponse>>> getProjectsByUserId(
-            @Parameter(description = "사용자 ID", required = true)
-            @RequestParam Long userId) {
+    public ResponseEntity<ApiResponse<List<ProjectResponse>>> getUserProjects(Authentication authentication) {
         
-        log.info("Getting projects for userId: {}", userId);
-        var projects = projectService.getProjectsByUserId(userId);
+        String loginId = authentication.getName();
+        log.info("프로젝트 목록 조회 - 사용자: {}", loginId);
         
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("프로젝트 목록 조회 성공", projects));
+        var projects = projectService.getUserProjects(loginId);
+        var responses = projects.stream()
+                .map(ProjectResponse::from)
+                .toList();
+        
+        return ResponseEntity.ok(ApiResponse.success(responses));
     }
-    
+
+    @Operation(summary = "프로젝트 상세 조회", description = "특정 프로젝트의 상세 정보를 조회합니다.")
     @GetMapping("/{projectId}")
-    @Operation(summary = "프로젝트 상세 조회", description = "프로젝트 ID로 상세 정보를 조회합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "프로젝트 상세 조회 성공")
-    public ResponseEntity<ApiResponse<ProjectResponse>> getProjectById(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId) {
+    public ResponseEntity<ApiResponse<ProjectResponse>> getProject(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
         
-        log.info("Getting project by id: {}", projectId);
-        ProjectResponse response = projectService.getProjectById(projectId);
+        String loginId = authentication.getName();
+        log.info("프로젝트 상세 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
         
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("프로젝트 상세 조회 성공", response));
+        var project = projectService.getProject(loginId, projectId);
+        
+        return ResponseEntity.ok(ApiResponse.success(ProjectResponse.from(project)));
     }
-    
-    @GetMapping("/{projectId}/secure")
-    @Operation(summary = "프로젝트 상세 조회 (권한 검증)", description = "프로젝트 ID와 사용자 ID로 상세 정보를 조회합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "프로젝트 상세 조회 성공")
-    public ResponseEntity<ApiResponse<ProjectResponse>> getProjectByIdAndUserId(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId,
-            @Parameter(description = "사용자 ID", required = true)
-            @RequestParam Long userId) {
+
+    @Operation(summary = "기획 생성", description = "프로젝트의 기획을 생성합니다. OpenAI GPT를 사용합니다.")
+    @PostMapping("/{projectId}/plans")
+    public ResponseEntity<ApiResponse<ProjectPlanResponse>> createPlan(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Valid @RequestBody PlanCreateRequest request,
+            Authentication authentication) {
         
-        log.info("Getting project by id: {} for userId: {}", projectId, userId);
-        ProjectResponse response = projectService.getProjectByIdAndUserId(projectId, userId);
+        String loginId = authentication.getName();
+        log.info("기획 생성 요청 - 사용자: {}, 프로젝트: {}, 프롬프트: {}", 
+                loginId, projectId, request.getUserPrompt());
         
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("프로젝트 상세 조회 성공", response));
+        var plan = planningService.createPlan(loginId, projectId, request);
+        
+        // 기획 응답 변환
+        ProjectPlanResponse response = convertToPlanResponse(plan);
+        
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
-    
-    @GetMapping("/{projectId}/scenes")
-    @Operation(summary = "프로젝트별 씬 목록 조회", description = "프로젝트 ID로 속한 씬 목록을 조회합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "씬 목록 조회 성공")
-    public ResponseEntity<ApiResponse<java.util.List<SceneResponse>>> getScenesByProjectId(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId) {
+
+    @Operation(summary = "기획 이력 조회", description = "프로젝트의 모든 기획 이력을 조회합니다.")
+    @GetMapping("/{projectId}/plans")
+    public ResponseEntity<ApiResponse<List<ProjectPlanResponse>>> getPlanHistory(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
         
-        log.info("Getting scenes for projectId: {}", projectId);
-        var scenes = projectService.getScenesByProjectId(projectId);
+        String loginId = authentication.getName();
+        log.info("기획 이력 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
         
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("씬 목록 조회 성공", scenes));
+        var plans = planningService.getPlanHistory(projectId);
+        var responses = plans.stream()
+                .map(this::convertToPlanResponse)
+                .toList();
+        
+        return ResponseEntity.ok(ApiResponse.success(responses));
     }
-    
-    @GetMapping("/{projectId}/scenes/secure")
-    @Operation(summary = "프로젝트별 씬 목록 조회 (권한 검증)", description = "프로젝트 ID와 사용자 ID로 속한 씬 목록을 조회합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "씬 목록 조회 성공")
-    public ResponseEntity<ApiResponse<java.util.List<SceneResponse>>> getScenesByProjectIdAndUserId(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId,
-            @Parameter(description = "사용자 ID", required = true)
-            @RequestParam Long userId) {
-        
-        log.info("Getting scenes for projectId: {} and userId: {}", projectId, userId);
-        var scenes = projectService.getScenesByProjectIdAndUserId(projectId, userId);
-        
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("씬 목록 조회 성공", scenes));
-    }
-    
-    @PatchMapping("/{projectId}/core-elements")
-    @Operation(summary = "핵심 요소 저장", description = "프로젝트의 핵심 요소를 저장하거나 수정합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "핵심 요소 저장 성공")
-    public ResponseEntity<ApiResponse<ProjectResponse>> updateCoreElements(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId,
-            @Valid @RequestBody CoreElementsRequest request) {
-        
-        log.info("Updating core elements for projectId: {}", projectId);
-        ProjectResponse response = projectService.updateCoreElements(projectId, request);
-        
-        return ResponseEntity.ok()
-                .body(ApiResponse.success("핵심 요소 저장 성공", response));
-    }
-    
-    @PostMapping("/{projectId}/idea")
-    @Operation(summary = "프로젝트 아이디어 생성", description = "사용자 입력을 기반으로 프로젝트 아이디어를 생성합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "프로젝트 아이디어 생성 성공")
-    public ResponseEntity<ApiResponse<IdeaGenerationResponse>> generateProjectIdea(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId,
-            @Valid @RequestBody IdeaGenerationRequest request) {
-        
-        log.info("Generating project idea for projectId: {}", projectId);
-        ApiResponse<IdeaGenerationResponse> response = projectService.generateProjectIdea(projectId, request);
-        
-        return ResponseEntity.ok()
-                .body(response);
-    }
-    
-    @PostMapping("/{projectId}/scenes/generate")
-    @Operation(summary = "프로젝트 씬 생성", description = "씬 아이디어를 기반으로 프로젝트 씬 목록을 생성합니다.")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "프로젝트 씬 생성 성공")
-    public ResponseEntity<ApiResponse<SceneGenerationResponse>> generateProjectScenes(
-            @Parameter(description = "프로젝트 ID", required = true)
-            @PathVariable Long projectId,
-            @Valid @RequestBody com.example.hdb.dto.request.SceneGenerationRequest request) {
-        
-        log.info("Generating project scenes for projectId: {}", projectId);
-        ApiResponse<SceneGenerationResponse> response = projectService.generateProjectScenes(projectId, request);
-        
-        return ResponseEntity.ok()
-                .body(response);
+
+    private ProjectPlanResponse convertToPlanResponse(ProjectPlan plan) {
+        try {
+            // JSON 데이터를 객체로 변환
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(plan.getPlanData(), ProjectPlanResponse.class);
+        } catch (Exception e) {
+            log.error("기획 데이터 변환 실패", e);
+            return ProjectPlanResponse.builder().build();
+        }
     }
 }

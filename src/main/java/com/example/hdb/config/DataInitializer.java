@@ -7,9 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-
-import java.time.LocalDateTime;
 
 @Configuration
 @RequiredArgsConstructor
@@ -21,36 +18,29 @@ public class DataInitializer {
     @Bean
     public CommandLineRunner initData() {
         return args -> {
-            log.info("Initializing default users...");
+            log.info("=== 초기 사용자 데이터 생성 시작 ===");
             
-            // BCryptPasswordEncoder 생성
-            BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+            String[] usernames = {"user1", "user2", "user3", "user4", "user5"};
+            String password = "1111";
             
-            // 초기 계정 5개 생성
-            createDefaultUserIfNotExists("user1", "1111", "사용자1", passwordEncoder);
-            createDefaultUserIfNotExists("user2", "1111", "사용자2", passwordEncoder);
-            createDefaultUserIfNotExists("user3", "1111", "사용자3", passwordEncoder);
-            createDefaultUserIfNotExists("user4", "1111", "사용자4", passwordEncoder);
-            createDefaultUserIfNotExists("user5", "1111", "사용자5", passwordEncoder);
+            for (String username : usernames) {
+                if (!userRepository.existsByLoginId(username)) {
+                    User user = User.builder()
+                            .loginId(username)
+                            .password(password) // 평문 저장
+                            .name(username.toUpperCase())
+                            .role(User.UserRole.USER)
+                            .build();
+                    
+                    userRepository.save(user);
+                    log.info("사용자 생성 완료: {}", username);
+                } else {
+                    log.info("사용자 이미 존재: {}", username);
+                }
+            }
             
-            log.info("Default users initialization completed.");
+            log.info("=== 초기 사용자 데이터 생성 완료 ===");
+            log.info("총 사용자 수: {}", userRepository.count());
         };
-    }
-    
-    private void createDefaultUserIfNotExists(String loginId, String password, String name, BCryptPasswordEncoder passwordEncoder) {
-        if (!userRepository.existsByLoginId(loginId)) {
-            User user = User.builder()
-                    .loginId(loginId)
-                    .password(passwordEncoder.encode(password)) // BCrypt로 비밀번호 인코딩
-                    .name(name)
-                    .role(User.UserRole.USER)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            
-            userRepository.save(user);
-            log.info("Created default user: {} ({})", loginId, name);
-        } else {
-            log.info("User {} already exists, skipping creation.", loginId);
-        }
     }
 }

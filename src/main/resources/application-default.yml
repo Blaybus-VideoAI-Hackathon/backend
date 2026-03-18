@@ -25,5 +25,5 @@ openai:
 
 logging:
   level:
-    com.example.hdb: INFO
-    org.springframework.web: INFO
+    com.example.hdb: DEBUG
+    org.springframework.web: DEBUG

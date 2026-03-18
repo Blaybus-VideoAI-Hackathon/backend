@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "scenes")
@@ -46,4 +47,12 @@ public class Scene extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SceneStatus status;
+    
+    // 이미지 관계 추가
+    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<SceneImage> images;
+    
+    // 영상 관계 추가
+    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<SceneVideo> videos;
 }

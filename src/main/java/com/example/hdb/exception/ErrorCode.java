@@ -16,6 +16,9 @@ public enum ErrorCode {
     LLM_SERVICE_ERROR("LLM_001", "LLM 서비스 오류가 발생했습니다."),
     LLM_GENERATION_FAILED("LLM_002", "LLM 생성에 실패했습니다."),
     
+    // 권한 관련
+    UNAUTHORIZED_ACCESS("AUTH_001", "접근 권한이 없습니다."),
+    
     // 공통
     VALIDATION_ERROR("COMMON_001", "입력값이 유효하지 않습니다."),
     INTERNAL_SERVER_ERROR("COMMON_002", "서버 내부 오류가 발생했습니다.");
