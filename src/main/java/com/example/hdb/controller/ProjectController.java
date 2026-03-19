@@ -5,8 +5,9 @@ import com.example.hdb.dto.response.ApiResponse;
 import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.entity.ProjectPlan;
+import com.example.hdb.entity.ProjectStatus;
 import com.example.hdb.service.PlanningService;
-import com.example.hdb.service.ProjectServiceNew;
+import com.example.hdb.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -24,9 +25,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 @SecurityRequirement(name = "bearerAuth")
-public class ProjectController {
+public class ProjectController extends BaseController {
 
-    private final ProjectServiceNew projectService;
+    private final ProjectService projectService;
     private final PlanningService planningService;
 
     @Operation(summary = "프로젝트 생성", description = "새로운 프로젝트를 생성합니다.")
@@ -35,10 +36,11 @@ public class ProjectController {
             @Valid @RequestBody com.example.hdb.dto.request.ProjectCreateRequest request,
             Authentication authentication) {
         
-        String loginId = authentication.getName();
+        String loginId = resolveLoginId(authentication);
         log.info("프로젝트 생성 요청 - 사용자: {}, 제목: {}", loginId, request.getTitle());
         
-        var project = projectService.createProject(loginId, request);
+        // Entity 생성 후 DTO 변환
+        var project = projectService.createProjectByLoginId(loginId, request);
         
         return ResponseEntity.ok(ApiResponse.success(ProjectResponse.from(project)));
     }
@@ -47,9 +49,11 @@ public class ProjectController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<ProjectResponse>>> getUserProjects(Authentication authentication) {
         
-        String loginId = authentication.getName();
-        log.info("프로젝트 목록 조회 - 사용자: {}", loginId);
+        log.info("authentication = {}", authentication);
+        String loginId = resolveLoginId(authentication);
+        log.info("resolved loginId = {}", loginId);
         
+        // Entity 목록 생성 후 DTO 변환
         var projects = projectService.getUserProjects(loginId);
         var responses = projects.stream()
                 .map(ProjectResponse::from)
@@ -64,10 +68,11 @@ public class ProjectController {
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             Authentication authentication) {
         
-        String loginId = authentication.getName();
+        String loginId = resolveLoginId(authentication);
         log.info("프로젝트 상세 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
         
-        var project = projectService.getProject(loginId, projectId);
+        // Entity 조회 후 DTO 변환
+        var project = projectService.getProjectByLoginId(loginId, projectId);
         
         return ResponseEntity.ok(ApiResponse.success(ProjectResponse.from(project)));
     }
@@ -79,7 +84,7 @@ public class ProjectController {
             @Valid @RequestBody PlanCreateRequest request,
             Authentication authentication) {
         
-        String loginId = authentication.getName();
+        String loginId = resolveLoginId(authentication);
         log.info("기획 생성 요청 - 사용자: {}, 프로젝트: {}, 프롬프트: {}", 
                 loginId, projectId, request.getUserPrompt());
         
@@ -97,7 +102,7 @@ public class ProjectController {
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             Authentication authentication) {
         
-        String loginId = authentication.getName();
+        String loginId = resolveLoginId(authentication);
         log.info("기획 이력 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
         
         var plans = planningService.getPlanHistory(projectId);

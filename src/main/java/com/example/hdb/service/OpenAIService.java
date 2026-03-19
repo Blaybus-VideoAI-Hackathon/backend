@@ -68,6 +68,186 @@ public class OpenAIService {
         return callOpenAI(systemPrompt, userPrompt);
     }
     
+    // ========== 신규 메서드 (C단계 GPT 연동) ==========
+    
+    /**
+     * 기획 생성을 위한 OpenAI 호출
+     */
+    public String generatePlan(String userPrompt) {
+        String systemPrompt = """
+            당신은 창의적인 비디오 콘텐츠 기획자입니다. 사용자의 요청을 바탕으로 흥미로운 비디오 기획을 생성해주세요.
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "title": "기획 제목",
+              "coreElements": {
+                "mainCharacter": "주요 캐릭터",
+                "background": "배경 설정",
+                "mood": "분위기",
+                "style": "스타일",
+                "storyFlow": "이야기 흐름"
+              }
+            }
+            """;
+        
+        String fullUserPrompt = String.format("""
+            다음 사용자 요청을 바탕으로 비디오 기획을 생성해주세요:
+            
+            사용자 요청: %s
+            
+            위 요청에 맞는 창의적인 비디오 기획을 생성해주세요.
+            """, userPrompt);
+        
+        return callOpenAI(systemPrompt, fullUserPrompt);
+    }
+    
+    /**
+     * Scene 생성을 위한 OpenAI 호출
+     */
+    public String generateScenesFromProject(String projectTitle, String coreElements, String sceneGenerationRequest) {
+        String systemPrompt = """
+            당신은 비디오 콘텐츠 구성 전문가입니다. 프로젝트 정보를 바탕으로 반드시 2~5개의 씬(장면)만 생성해주세요.
+            
+            중요: 씬은 반드시 2개 이상 5개 이하로만 생성해주세요. 1개 또는 6개 이상은 절대 안 됩니다.
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "scenes": [
+                {
+                  "sceneOrder": 1,
+                  "summary": "씬 요약",
+                  "optionalElements": {
+                    "action": "행동",
+                    "mood": "분위기",
+                    "camera": "카메라 각도"
+                  },
+                  "imagePrompt": "이미지 생성 프롬프트",
+                  "videoPrompt": "비디오 생성 프롬프트"
+                }
+              ]
+            }
+            """;
+        
+        String fullUserPrompt = String.format("""
+            다음 프로젝트 정보를 바탕으로 반드시 2~5개의 씬(장면)만 생성해주세요:
+            
+            프로젝트 제목: %s
+            핵심 요소: %s
+            씬 생성 요청: %s
+            
+            중요: 반드시 2개 이상 5개 이하의 씬만 생성해주세요.
+            """, projectTitle, coreElements, sceneGenerationRequest);
+        
+        return callOpenAI(systemPrompt, fullUserPrompt);
+    }
+    
+    /**
+     * Scene 설계를 위한 OpenAI 호출
+     */
+    public String designScene(String sceneSummary, String designRequest) {
+        String systemPrompt = """
+            당신은 비디오 씬 설계 전문가입니다. 기존 씬 정보와 사용자 요청을 바탕으로 씬을 재설계해주세요.
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "optionalElements": {
+                "action": "행동",
+                "mood": "분위기",
+                "camera": "카메라 각도",
+                "lighting": "조명"
+              },
+              "imagePrompt": "이미지 생성 프롬프트",
+              "videoPrompt": "비디오 생성 프롬프트"
+            }
+            """;
+        
+        String fullUserPrompt = String.format("""
+            다음 정보를 바탕으로 씬을 설계해주세요:
+            
+            기존 씬 요약: %s
+            설계 요청: %s
+            
+            위 요청에 맞게 씬을 재설계해주세요.
+            """, sceneSummary, designRequest);
+        
+        return callOpenAI(systemPrompt, fullUserPrompt);
+    }
+    
+    /**
+     * Scene 수정을 위한 OpenAI 호출
+     */
+    public String editScene(String sceneSummary, String optionalElements, String imagePrompt, String videoPrompt, String editRequest) {
+        String systemPrompt = """
+            당신은 비디오 씬 수정 전문가입니다. 기존 씬 정보와 사용자 수정 요청을 바탕으로 씬을 수정해주세요.
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "optionalElements": {
+                "action": "행동",
+                "mood": "분위기",
+                "camera": "카메라 각도",
+                "lighting": "조명"
+              },
+              "imagePrompt": "이미지 생성 프롬프트",
+              "videoPrompt": "비디오 생성 프롬프트"
+            }
+            """;
+        
+        String fullUserPrompt = String.format("""
+            다음 정보를 바탕으로 씬을 수정해주세요:
+            
+            기존 씬 요약: %s
+            기존 선택 요소: %s
+            기존 이미지 프롬프트: %s
+            기존 영상 프롬프트: %s
+            수정 요청: %s
+            
+            위 요청에 맞게 씬을 수정해주세요.
+            """, sceneSummary, optionalElements, imagePrompt, videoPrompt, editRequest);
+        
+        return callOpenAI(systemPrompt, fullUserPrompt);
+    }
+    
+    /**
+     * 이미지 생성을 위한 OpenAI 호출 (DALL-E)
+     */
+    public String generateImage(String prompt) {
+        log.info("Generating image with prompt: {}", prompt);
+        
+        try {
+            // TODO: 실제 OpenAI DALL-E API 연동
+            // 현재는 stub으로 기본 URL 반환
+            String stubImageUrl = "https://picsum.photos/seed/" + prompt.hashCode() + "/512/512.jpg";
+            
+            log.info("Stub image generated: {}", stubImageUrl);
+            return stubImageUrl;
+            
+        } catch (Exception e) {
+            log.error("Failed to generate image", e);
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        }
+    }
+    
+    /**
+     * 영상 생성을 위한 OpenAI 호출 (Sora / Runway / Pika 등)
+     */
+    public String generateVideo(String prompt) {
+        log.info("Generating video with prompt: {}", prompt);
+        
+        try {
+            // TODO: 실제 영상 생성 API 연동 (OpenAI Sora, Runway, Pika 등)
+            // 현재는 stub으로 기본 URL 반환
+            String stubVideoUrl = "https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4";
+            
+            log.info("Stub video generated: {}", stubVideoUrl);
+            return stubVideoUrl;
+            
+        } catch (Exception e) {
+            log.error("Failed to generate video", e);
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        }
+    }
+    
     private String callOpenAI(String systemPrompt, String userPrompt) {
         try {
             log.info("Calling OpenAI API - systemPrompt length: {}, userPrompt length: {}", 

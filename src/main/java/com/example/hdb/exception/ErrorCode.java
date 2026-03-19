@@ -11,6 +11,8 @@ public enum ErrorCode {
     
     // Scene 관련
     SCENE_NOT_FOUND("SCENE_001", "씬을 찾을 수 없습니다."),
+    SCENE_IMAGE_PROMPT_NOT_FOUND("SCENE_002", "씬의 이미지 프롬프트를 찾을 수 없습니다."),
+    SCENE_VIDEO_PROMPT_NOT_FOUND("SCENE_003", "씬의 영상 프롬프트를 찾을 수 없습니다."),
     
     // LLM 관련
     LLM_SERVICE_ERROR("LLM_001", "LLM 서비스 오류가 발생했습니다."),

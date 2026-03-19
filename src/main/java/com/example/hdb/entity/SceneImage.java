@@ -5,9 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-
-import java.time.LocalDateTime;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 @Entity
 @Table(name = "scene_images")
@@ -15,7 +14,9 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SceneImage {
+@EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
+public class SceneImage extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -28,7 +29,7 @@ public class SceneImage {
     @Column(nullable = false)
     private Integer imageNumber;
 
-    @Column(nullable = false, length = 500)
+    @Column(length = 500)
     private String imageUrl;
 
     @Column(length = 1000)
@@ -40,10 +41,6 @@ public class SceneImage {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ImageStatus status;
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
 
     public enum ImageStatus {
         GENERATING("생성 중"),

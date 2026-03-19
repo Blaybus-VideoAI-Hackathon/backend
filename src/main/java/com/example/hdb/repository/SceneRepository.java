@@ -23,6 +23,8 @@ public interface SceneRepository extends JpaRepository<Scene, Long> {
     
     Optional<Scene> findByIdAndProjectUserId(Long sceneId, Long userId);
     
+    Optional<Scene> findByIdAndProjectId(Long sceneId, Long projectId);
+    
     @Modifying
     @Query("DELETE FROM Scene s WHERE s.project.id = :projectId")
     void deleteByProjectId(@Param("projectId") Long projectId);

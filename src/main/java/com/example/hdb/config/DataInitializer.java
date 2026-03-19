@@ -8,6 +8,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.LocalDateTime;
+
 @Configuration
 @RequiredArgsConstructor
 @Slf4j
@@ -30,6 +32,7 @@ public class DataInitializer {
                             .password(password) // 평문 저장
                             .name(username.toUpperCase())
                             .role(User.UserRole.USER)
+                            .createdAt(LocalDateTime.now()) // Fallback: 수동으로 createdAt 설정
                             .build();
                     
                     userRepository.save(user);

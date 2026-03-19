@@ -2,7 +2,6 @@ package com.example.hdb.dto.request;
 
 import com.example.hdb.enums.PlanningStatus;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 @Data
@@ -10,9 +9,6 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class ProjectCreateRequest {
-    
-    @NotNull(message = "사용자 ID는 필수입니다.")
-    private Long userId;
     
     @NotBlank(message = "프로젝트 제목을 입력해주세요.")
     private String title;
@@ -28,6 +24,8 @@ public class ProjectCreateRequest {
     private Integer duration;
     
     private String ideaText;
+    
+    private String coreElements;
     
     @Builder.Default
     private PlanningStatus planningStatus = PlanningStatus.DRAFT;

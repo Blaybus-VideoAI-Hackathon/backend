@@ -25,11 +25,17 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .requestMatchers("/api/projects/**").permitAll()  // 해커톤 MVP용 임시 허용
-                .requestMatchers("/api/scenes/**").permitAll()   // 해커톤 MVP용 임시 허용
-                .anyRequest().authenticated()
+                .requestMatchers(
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+                    "/swagger-ui.html",
+                    "/api/auth/**",
+                    "/api/projects/**",
+                    "/api/scenes/**",
+                    "/api/plans/**",
+                    "/api/videos/**"
+                ).permitAll()
+                .anyRequest().permitAll()
             )
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable());

@@ -10,6 +10,7 @@ import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.dto.request.SceneGenerationRequest;
 import com.example.hdb.dto.response.SceneGenerationResponse;
 import com.example.hdb.entity.Project;
+import com.example.hdb.entity.ProjectStatus;
 import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.User;
 import com.example.hdb.exception.BusinessException;
@@ -38,14 +39,25 @@ public class ProjectServiceImpl implements ProjectService {
     private final SceneRepository sceneRepository;
     private final OpenAIService openAIService;
     
+    // ========== loginId 기반 메서드 (ProjectServiceNew에서 병합) ==========
+    
     @Override
     public ProjectResponse createProject(ProjectCreateRequest request) {
-        log.info("Creating project with userId: {}, title: {}", request.getUserId(), request.getTitle());
+        // 이 메서드는 더 이상 사용하지 않음 (loginId 기반으로 변경)
+        throw new UnsupportedOperationException("이 메서드는 더 이상 사용되지 않습니다. loginId 기반 메서드를 사용하세요.");
+    }
+    
+    /**
+     * loginId 기반 프로젝트 생성 (신규 추가)
+     */
+    public Project createProjectByLoginId(String loginId, ProjectCreateRequest request) {
+        log.info("Creating project with loginId: {}, title: {}", loginId, request.getTitle());
         
         // 사용자 존재 확인
-        User user = userRepository.findById(request.getUserId())
+        User user = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         
+        // 프로젝트 생성
         Project project = Project.builder()
                 .user(user)
                 .title(request.getTitle())
@@ -54,45 +66,95 @@ public class ProjectServiceImpl implements ProjectService {
                 .purpose(request.getPurpose())
                 .duration(request.getDuration())
                 .ideaText(request.getIdeaText())
+                .coreElements(request.getCoreElements())
                 .planningStatus(request.getPlanningStatus())
+                .status(ProjectStatus.PLANNING)
                 .build();
         
         Project savedProject = projectRepository.save(project);
         log.info("Project created successfully with id: {}", savedProject.getId());
         
-        return ProjectResponse.from(savedProject);
+        return savedProject;
     }
     
     @Override
     public List<ProjectResponse> getProjectsByUserId(Long userId) {
-        log.info("Getting projects for userId: {}", userId);
-        
-        List<Project> projects = projectRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        // userId 기반 메서드는 내부에서 loginId로 변환
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        List<Project> projects = getUserProjects(user.getLoginId());
         
         return projects.stream()
                 .map(ProjectResponse::from)
                 .collect(Collectors.toList());
     }
     
+    /**
+     * loginId 기반 프로젝트 목록 (신규 추가)
+     */
+    public List<Project> getUserProjects(String loginId) {
+        log.info("getProjects 호출 - loginId={}", loginId);
+        
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        
+        List<Project> projects = projectRepository.findByUserOrderByCreatedAtDesc(user);
+        log.info("Found {} projects for loginId: {}", projects.size(), loginId);
+        
+        return projects;
+    }
+    
     @Override
     public ProjectResponse getProjectById(Long projectId) {
         log.info("Getting project by id: {}", projectId);
         
-        // TODO: 실제 사용자 인증 구현 후 userId 파라미터 추가
-        // 현재는 임시로 projectId만으로 조회 (권한 검증 필요)
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         
         return ProjectResponse.from(project);
     }
     
-    @Override
-    public ProjectResponse getProjectByIdAndUserId(Long projectId, Long userId) {
-        log.info("Getting project by id: {} for userId: {}", projectId, userId);
+    /**
+     * loginId 기반 프로젝트 상세 조회 (신규 추가)
+     */
+    public Project getProjectByLoginId(String loginId, Long projectId) {
+        log.info("Getting project by id: {}, loginId: {}", projectId, loginId);
         
-        Project project = projectRepository.findByIdAndUserId(projectId, userId)
+        Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         
+        // 권한 확인 (loginId가 있는 경우만)
+        if (loginId != null && !project.getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        return project;
+    }
+    
+    /**
+     * 프로젝트 상태 업데이트 (신규 추가)
+     */
+    public Project updateProjectStatus(Long projectId, ProjectStatus status) {
+        log.info("Updating project status: {} -> {}", projectId, status);
+        
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        project.setStatus(status);
+        Project updatedProject = projectRepository.save(project);
+        
+        log.info("Project status updated successfully: {}", updatedProject.getStatus());
+        return updatedProject;
+    }
+
+    // ========== 기존 userId 기반 메서드 (내부용) ==========
+    
+    @Override
+    public ProjectResponse getProjectByIdAndUserId(Long projectId, Long userId) {
+        // userId 기반 메서드는 내부에서 loginId로 변환
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        Project project = getProjectByLoginId(user.getLoginId(), projectId);
         return ProjectResponse.from(project);
     }
     
@@ -139,7 +201,6 @@ public class ProjectServiceImpl implements ProjectService {
         Project updatedProject = projectRepository.save(project);
         
         log.info("Core elements updated successfully for projectId: {}", projectId);
-        
         return ProjectResponse.from(updatedProject);
     }
     

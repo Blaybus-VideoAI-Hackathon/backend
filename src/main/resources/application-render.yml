@@ -1,11 +1,10 @@
 spring:
-  # Render + Aiven MySQL 전용 설정
   datasource:
     url: ${SPRING_DATASOURCE_URL}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -15,9 +14,13 @@ spring:
         format_sql: true
     open-in-view: false
 
-# OpenAI API 설정
 openai:
-  api-key: ${OPENAI_API_KEY:your-openai-api-key-here}
+  api-key: ${OPENAI_API_KEY:}
+
+kling:
+  access-key: ${KLING_ACCESS_KEY:}
+  secret-key: ${KLING_SECRET_KEY:}
+  base-url: https://api.klingai.com
 
 logging:
   level:
