@@ -41,6 +41,9 @@ public class Scene extends BaseTimeEntity {
     @Column(name = "image_url", length = 500)
     private String imageUrl;
     
+    @Column(name = "edited_image_url", length = 500)
+    private String editedImageUrl;
+    
     @Column(name = "video_url", length = 500)
     private String videoUrl;
     

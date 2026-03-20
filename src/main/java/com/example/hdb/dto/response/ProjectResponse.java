@@ -21,6 +21,7 @@ public class ProjectResponse {
     private String ideaText;
     private String coreElements;
     private String planningStatus;
+    private String finalVideoUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -36,6 +37,7 @@ public class ProjectResponse {
                 .ideaText(project.getIdeaText())
                 .coreElements(project.getCoreElements())
                 .planningStatus(project.getPlanningStatus().name())
+                .finalVideoUrl(project.getFinalVideoUrl())
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();

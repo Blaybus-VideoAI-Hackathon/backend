@@ -14,6 +14,7 @@ public class SceneImageResponse {
     private Long id;
     private Integer imageNumber;
     private String imageUrl;
+    private String editedImageUrl;
     private String imagePrompt;
     private String status;
     private String statusDescription;

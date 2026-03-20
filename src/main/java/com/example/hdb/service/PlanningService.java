@@ -23,9 +23,10 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional
 public class PlanningService {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PlanningService.class);
 
     private final ProjectPlanRepository planRepository;
     private final ProjectRepository projectRepository;

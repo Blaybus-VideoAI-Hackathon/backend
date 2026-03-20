@@ -1,11 +1,16 @@
 package com.example.hdb.controller;
 
 import com.example.hdb.dto.common.ApiResponse;
+import com.example.hdb.dto.request.SceneVideoGenerateRequest;
 import com.example.hdb.dto.response.SceneVideoResponse;
 import com.example.hdb.service.SceneVideoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -22,17 +27,57 @@ public class SceneVideoController extends BaseController {
     
     private final SceneVideoService sceneVideoService;
     
-    @Operation(summary = "씬 영상 생성", description = "씬의 videoPrompt를 기반으로 영상을 생성합니다.")
+    @Operation(
+        summary = "씬 영상 생성", 
+        description = "씬의 videoPrompt를 기반으로 영상을 생성합니다. 영상 길이를 선택할 수 있습니다.",
+        requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            description = "영상 생성 요청",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = SceneVideoGenerateRequest.class),
+                examples = {
+                    @ExampleObject(
+                        name = "3초 영상",
+                        value = "{\"duration\": 3}",
+                        description = "3초 길이의 영상 생성"
+                    ),
+                    @ExampleObject(
+                        name = "4초 영상", 
+                        value = "{\"duration\": 4}",
+                        description = "4초 길이의 영상 생성"
+                    ),
+                    @ExampleObject(
+                        name = "5초 영상",
+                        value = "{\"duration\": 5}",
+                        description = "5초 길이의 영상 생성"
+                    )
+                }
+            )
+        )
+    )
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse<SceneVideoResponse>> generateVideo(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = false) @Valid SceneVideoGenerateRequest request,
             Authentication authentication) {
         
         log.info("Generating video for scene: {} in project: {}", sceneId, projectId);
         
         String loginId = resolveLoginId(authentication);
-        SceneVideoResponse response = sceneVideoService.generateVideo(projectId, sceneId, loginId);
+        
+        // duration 파라미터 추출 (기본값: 3초)
+        Integer duration = 3; // 기본값
+        if (request != null && request.getDuration() != null) {
+            duration = request.getDuration();
+            // 유효성 체크 (3-5초)
+            if (duration < 3 || duration > 5) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("영상 길이는 3초, 4초, 5초 중에서 선택 가능합니다."));
+            }
+        }
+        
+        SceneVideoResponse response = sceneVideoService.generateVideo(projectId, sceneId, loginId, duration);
         
         return ResponseEntity.ok(ApiResponse.success("영상 생성 성공", response));
     }

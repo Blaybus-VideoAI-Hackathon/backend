@@ -21,6 +21,7 @@ public class SceneResponse {
     private String imagePrompt;
     private String videoPrompt;
     private String imageUrl; // 대표 이미지 URL (Service에서 계산됨)
+    private String editedImageUrl; // 편집된 이미지 URL
     private String videoUrl; // 대표 영상 URL (Service에서 계산됨)
     private String status;
     private LocalDateTime createdAt;
@@ -36,22 +37,23 @@ public class SceneResponse {
         return SceneResponse.from(scene, null, null, null);
     }
 
-    public static SceneResponse from(Scene scene, OptionalElements optionalElementsObject) {
-        return SceneResponse.from(scene, optionalElementsObject, null, null);
+    public static SceneResponse from(Scene scene, OptionalElements optionalElements) {
+        return SceneResponse.from(scene, optionalElements, null, null);
     }
 
-    public static SceneResponse from(Scene scene, OptionalElements optionalElementsObject, String imageUrl, String videoUrl) {
+    public static SceneResponse from(Scene scene, OptionalElements optionalElements, String imageUrl, String videoUrl) {
         return SceneResponse.builder()
                 .id(scene.getId())
                 .projectId(scene.getProject() != null ? scene.getProject().getId() : null)
                 .sceneOrder(scene.getSceneOrder())
                 .summary(scene.getSummary())
-                .optionalElements(scene.getOptionalElements()) // 원본 JSON 문자열
-                .optionalElementsObject(optionalElementsObject) // Service에서 파싱한 객체
+                .optionalElements(scene.getOptionalElements())
+                .optionalElementsObject(optionalElements)
                 .imagePrompt(scene.getImagePrompt())
                 .videoPrompt(scene.getVideoPrompt())
-                .imageUrl(imageUrl) // Service에서 계산된 대표 이미지 URL
-                .videoUrl(videoUrl) // Service에서 계산된 대표 영상 URL
+                .imageUrl(imageUrl)
+                .editedImageUrl(scene.getEditedImageUrl())
+                .videoUrl(videoUrl)
                 .status(scene.getStatus().name())
                 .createdAt(scene.getCreatedAt())
                 .updatedAt(scene.getUpdatedAt())

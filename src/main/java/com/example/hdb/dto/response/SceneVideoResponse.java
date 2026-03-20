@@ -14,6 +14,7 @@ public class SceneVideoResponse {
     private Long id;
     private String videoUrl;
     private String videoPrompt;
+    private Integer duration;
     private String status;
     private String statusDescription;
     private LocalDateTime createdAt;

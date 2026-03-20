@@ -31,6 +31,9 @@ public class SceneImage extends BaseTimeEntity {
 
     @Column(length = 500)
     private String imageUrl;
+    
+    @Column(name = "edited_image_url", length = 500)
+    private String editedImageUrl;
 
     @Column(length = 1000)
     private String imagePrompt;
@@ -39,7 +42,7 @@ public class SceneImage extends BaseTimeEntity {
     private String openaiImageId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private ImageStatus status;
 
     public enum ImageStatus {

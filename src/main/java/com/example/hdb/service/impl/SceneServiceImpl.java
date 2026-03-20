@@ -1,16 +1,19 @@
 package com.example.hdb.service.impl;
 
 import com.example.hdb.dto.request.SceneCreateRequest;
+import com.example.hdb.dto.request.SceneDesignRegenerateRequest;
 import com.example.hdb.dto.request.SceneDesignRequest;
 import com.example.hdb.dto.request.SceneEditRequest;
-import com.example.hdb.dto.request.SceneGenerateRequest;
+import com.example.hdb.dto.request.SceneGenerationRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
+import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.dto.common.OptionalElements;
 import com.example.hdb.dto.openai.SceneGenerationResponse;
-import com.example.hdb.dto.openai.SceneDesignResponse;
 import com.example.hdb.entity.Project;
 import com.example.hdb.entity.Scene;
+import com.example.hdb.entity.SceneImage;
+import com.example.hdb.entity.SceneVideo;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectRepository;
@@ -32,9 +35,10 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional
 public class SceneServiceImpl implements SceneService {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SceneServiceImpl.class);
     
     private final SceneRepository sceneRepository;
     private final ProjectRepository projectRepository;
@@ -152,6 +156,9 @@ public class SceneServiceImpl implements SceneService {
         
         try {
             // OpenAI로 씬 생성
+            log.info("OpenAI 호출 - projectTitle: {}, coreElements: {}, request: {}", 
+                    project.getTitle(), project.getCoreElements(), sceneGenerationRequest);
+            
             String aiResponse = openAIService.generateScenesFromProject(
                     project.getTitle(), 
                     project.getCoreElements(), 
@@ -210,26 +217,29 @@ public class SceneServiceImpl implements SceneService {
                     .collect(Collectors.toList());
             
         } catch (Exception e) {
-            log.error("씬 생성 실패 - fallback 실행", e);
+            log.error("씬 생성 실패 - fallback 실행. 원본 요청: {}", sceneGenerationRequest, e);
             
-            // fallback: 기본 scene 2개 생성
+            // fallback: 프로젝트 정보 기반 기본 scene 2개 생성
+            String projectTitle = project.getTitle();
+            String coreElements = project.getCoreElements();
+            
             List<Scene> fallbackScenes = List.of(
                 Scene.builder()
                         .project(project)
                         .sceneOrder(1)
-                        .summary("강아지가 밥그릇을 발견한다")
-                        .optionalElements(createOptionalElementsJson("발견", "호기심"))
-                        .imagePrompt("A cute dog finds a food bowl with excitement")
-                        .videoPrompt("A cute dog finds a food bowl and reacts with excitement")
+                        .summary(String.format("%s의 첫 번째 장면", projectTitle))
+                        .optionalElements(createOptionalElementsJson("도입", "준비"))
+                        .imagePrompt(String.format("First scene of %s with %s, introduction and preparation mood", projectTitle, coreElements))
+                        .videoPrompt(String.format("Opening scene showing %s with %s, setting up the atmosphere", projectTitle, coreElements))
                         .status(com.example.hdb.enums.SceneStatus.PENDING)
                         .build(),
                 Scene.builder()
                         .project(project)
                         .sceneOrder(2)
-                        .summary("강아지가 맛있게 밥을 먹는다")
-                        .optionalElements(createOptionalElementsJson("먹기", "행복"))
-                        .imagePrompt("A cute dog eating happily from its food bowl")
-                        .videoPrompt("A cute dog eating happily with wagging tail")
+                        .summary(String.format("%s의 두 번째 장면", projectTitle))
+                        .optionalElements(createOptionalElementsJson("전개", "활동"))
+                        .imagePrompt(String.format("Second scene of %s with %s, development and activity mood", projectTitle, coreElements))
+                        .videoPrompt(String.format("Development scene showing %s with %s, main action begins", projectTitle, coreElements))
                         .status(com.example.hdb.enums.SceneStatus.PENDING)
                         .build()
             );
@@ -275,10 +285,9 @@ public class SceneServiceImpl implements SceneService {
             
             // JSON 파싱
             SceneDesignResponse designResponse = objectMapper.readValue(json, SceneDesignResponse.class);
-            log.info("씬 설계 파싱 완료");
             
-            // 씬 업데이트
-            scene.setOptionalElements(createOptionalElementsJson(designResponse.getOptionalElements()));
+            // 씬 업데이트 - SceneDesignResponse의 필드를 직접 사용
+            scene.setOptionalElements(objectMapper.writeValueAsString(designResponse.getOptionalElements()));
             scene.setImagePrompt(designResponse.getImagePrompt());
             scene.setVideoPrompt(designResponse.getVideoPrompt());
             
@@ -343,10 +352,9 @@ public class SceneServiceImpl implements SceneService {
             
             // JSON 파싱
             SceneDesignResponse editResponse = objectMapper.readValue(json, SceneDesignResponse.class);
-            log.info("씬 수정 파싱 완료");
             
-            // 씬 업데이트
-            scene.setOptionalElements(createOptionalElementsJson(editResponse.getOptionalElements()));
+            // 씬 업데이트 - SceneDesignResponse의 필드를 직접 사용
+            scene.setOptionalElements(objectMapper.writeValueAsString(editResponse.getOptionalElements()));
             scene.setImagePrompt(editResponse.getImagePrompt());
             scene.setVideoPrompt(editResponse.getVideoPrompt());
             
@@ -447,6 +455,194 @@ public class SceneServiceImpl implements SceneService {
             // 실패 시 기본 JSON 문자열 반환
             return "{}";
         }
+    }
+    
+    @Override
+    public void deleteScene(Long projectId, Long sceneId, String loginId) {
+        log.info("Deleting scene: sceneId={}, projectId={}, loginId={}", sceneId, projectId, loginId);
+        
+        try {
+            // 권한 체크: scene이 해당 project에 속하는지 확인
+            Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
+            
+            // 권한 체크: project가 해당 사용자 소유인지 확인
+            if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+            }
+            
+            // 관련 이미지 삭제
+            sceneImageRepository.deleteAllBySceneId(sceneId);
+            log.info("Deleted scene images for sceneId: {}", sceneId);
+            
+            // 관련 영상 삭제
+            sceneVideoRepository.deleteAllBySceneId(sceneId);
+            log.info("Deleted scene videos for sceneId: {}", sceneId);
+            
+            // Scene 삭제
+            sceneRepository.delete(scene);
+            
+            log.info("Scene deleted successfully: sceneId={}, projectId={}", sceneId, projectId);
+            
+        } catch (Exception e) {
+            log.error("Failed to delete scene: sceneId={}, projectId={}", sceneId, projectId, e);
+            throw new BusinessException(ErrorCode.SCENE_DELETION_FAILED);
+        }
+    }
+    
+    @Override
+    public SceneDesignResponse getSceneDesign(Long projectId, Long sceneId, String loginId) {
+        log.info("Getting scene design: projectId={}, sceneId={}, loginId={}", projectId, sceneId, loginId);
+        
+        // 권한 체크
+        Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
+        
+        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        // OptionalElements 파싱
+        OptionalElements optionalElements = parseOptionalElements(scene.getOptionalElements());
+        
+        return SceneDesignResponse.builder()
+                .sceneId(scene.getId())
+                .summary(scene.getSummary())
+                .optionalElements(optionalElements)
+                .imagePrompt(scene.getImagePrompt())
+                .videoPrompt(scene.getVideoPrompt())
+                .displayText("씬 설계 정보를 조회했습니다.")
+                .updatedAt(scene.getUpdatedAt())
+                .build();
+    }
+    
+    @Override
+    public SceneDesignResponse regenerateSceneDesign(Long projectId, Long sceneId, String loginId, SceneDesignRegenerateRequest request) {
+        log.info("Regenerating scene design: projectId={}, sceneId={}, loginId={}", projectId, sceneId, loginId);
+        
+        // 권한 체크
+        Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
+        
+        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        try {
+            // OpenAI로 새로운 설계 생성 (기존 summary 유지, variation 생성)
+            String variationRequest = request != null ? request.getUserRequest() : "같은 장면의 다른 연출 버전을 만들어주세요. 카메라 구도, 시간대, 무드, 조명을 다르게 구성해주세요.";
+            
+            log.info("OpenAI 호출 - sceneSummary: {}, variationRequest: {}", 
+                    scene.getSummary(), variationRequest);
+            
+            String aiResponse = openAIService.designScene(
+                    scene.getSummary(),
+                    variationRequest
+            );
+            log.info("OpenAI 씬 설계 재추천 응답: {}", aiResponse);
+            
+            // JSON 추출 및 파싱
+            String json = JsonUtils.extractJsonSafely(aiResponse);
+            log.info("추출된 JSON: {}", json);
+            OptionalElements newOptionalElements = parseOptionalElements(json);
+            
+            // 새로운 프롬프트 생성
+            String newImagePrompt = generateImagePromptFromElements(scene.getSummary(), newOptionalElements);
+            String newVideoPrompt = generateVideoPromptFromElements(scene.getSummary(), newOptionalElements);
+            
+            // Scene 업데이트
+            scene.setOptionalElements(createOptionalElementsJson(newOptionalElements));
+            scene.setImagePrompt(newImagePrompt);
+            scene.setVideoPrompt(newVideoPrompt);
+            Scene updatedScene = sceneRepository.save(scene);
+            
+            return SceneDesignResponse.builder()
+                    .sceneId(updatedScene.getId())
+                    .summary(updatedScene.getSummary())
+                    .optionalElements(newOptionalElements)
+                    .imagePrompt(updatedScene.getImagePrompt())
+                    .videoPrompt(updatedScene.getVideoPrompt())
+                    .displayText("같은 장면을 다른 연출로 다시 추천했습니다.")
+                    .updatedAt(updatedScene.getUpdatedAt())
+                    .build();
+            
+        } catch (Exception e) {
+            log.error("씬 설계 재추천 실패", e);
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        }
+    }
+    
+    /**
+     * Scene 엔티티를 SceneResponse로 변환
+     */
+    private SceneResponse convertToResponse(Scene scene) {
+        // Service 레이어에서 JSON 파싱 수행
+        OptionalElements optionalElementsObj = parseOptionalElements(scene.getOptionalElements());
+        // 대표 URL 계산
+        String imageUrl = getRepresentativeImageUrl(scene.getId());
+        String videoUrl = getRepresentativeVideoUrl(scene.getId());
+        return SceneResponse.from(scene, optionalElementsObj, imageUrl, videoUrl);
+    }
+    
+    /**
+     * OptionalElements로부터 이미지 프롬프트 생성
+     */
+    private String generateImagePromptFromElements(String summary, OptionalElements elements) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(summary);
+        
+        if (elements != null) {
+            if (elements.getAction() != null && !elements.getAction().isEmpty()) {
+                prompt.append(", ").append(elements.getAction());
+            }
+            if (elements.getPose() != null && !elements.getPose().isEmpty()) {
+                prompt.append(", ").append(elements.getPose());
+            }
+            if (elements.getCamera() != null && !elements.getCamera().isEmpty()) {
+                prompt.append(", ").append(elements.getCamera());
+            }
+            if (elements.getLighting() != null && !elements.getLighting().isEmpty()) {
+                prompt.append(", ").append(elements.getLighting());
+            }
+            if (elements.getMood() != null && !elements.getMood().isEmpty()) {
+                prompt.append(", ").append(elements.getMood());
+            }
+            if (elements.getTimeOfDay() != null && !elements.getTimeOfDay().isEmpty()) {
+                prompt.append(", ").append(elements.getTimeOfDay());
+            }
+        }
+        
+        prompt.append(", cinematic, high quality, detailed");
+        return prompt.toString();
+    }
+    
+    /**
+     * OptionalElements로부터 영상 프롬프트 생성
+     */
+    private String generateVideoPromptFromElements(String summary, OptionalElements elements) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Video: ").append(summary);
+        
+        if (elements != null) {
+            if (elements.getAction() != null && !elements.getAction().isEmpty()) {
+                prompt.append(", ").append(elements.getAction());
+            }
+            if (elements.getCamera() != null && !elements.getCamera().isEmpty()) {
+                prompt.append(", ").append(elements.getCamera());
+            }
+            if (elements.getLighting() != null && !elements.getLighting().isEmpty()) {
+                prompt.append(", ").append(elements.getLighting());
+            }
+            if (elements.getMood() != null && !elements.getMood().isEmpty()) {
+                prompt.append(", ").append(elements.getMood());
+            }
+            if (elements.getTimeOfDay() != null && !elements.getTimeOfDay().isEmpty()) {
+                prompt.append(", ").append(elements.getTimeOfDay());
+            }
+        }
+        
+        prompt.append(", smooth motion, cinematic video");
+        return prompt.toString();
     }
     
     /**

@@ -1,3 +1,5 @@
+# 로컬 개발에서 Aiven DB 연결 테스트용 설정
+# 로컬 환경에서 원격 Aiven DB로 연결할 때 사용
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL}

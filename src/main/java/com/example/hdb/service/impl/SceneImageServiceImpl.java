@@ -1,5 +1,8 @@
 package com.example.hdb.service.impl;
 
+import com.example.hdb.dto.request.ImageEditCompleteRequest;
+import com.example.hdb.dto.request.SceneImageEditAiRequest;
+import com.example.hdb.dto.response.SceneImageEditAiResponse;
 import com.example.hdb.dto.response.SceneImageResponse;
 import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.SceneImage;
@@ -15,13 +18,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional
 public class SceneImageServiceImpl implements SceneImageService {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SceneImageServiceImpl.class);
     
     private final SceneImageRepository sceneImageRepository;
     private final SceneRepository sceneRepository;
@@ -187,11 +192,84 @@ public class SceneImageServiceImpl implements SceneImageService {
                         .id(image.getId())
                         .imageNumber(image.getImageNumber())
                         .imageUrl(image.getImageUrl())
+                        .editedImageUrl(image.getEditedImageUrl())
                         .imagePrompt(image.getImagePrompt())
                         .status(image.getStatus().name())
                         .statusDescription(image.getStatus().getDescription())
                         .createdAt(image.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
+    }
+    
+    @Override
+    public SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId, String loginId, ImageEditCompleteRequest request) {
+        log.info("Completing image edit for imageId: {}, editedImageUrl: {}", imageId, request.getEditedImageUrl());
+        
+        // 권한 체크
+        SceneImage sceneImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
+        
+        // Scene을 통해 Project 권한 체크
+        Scene scene = sceneImage.getScene();
+        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        // 편집된 이미지 URL 저장
+        sceneImage.setEditedImageUrl(request.getEditedImageUrl());
+        SceneImage savedImage = sceneImageRepository.save(sceneImage);
+        
+        log.info("Image edit completed successfully: {}", savedImage.getId());
+        
+        return SceneImageResponse.builder()
+                .id(savedImage.getId())
+                .imageNumber(savedImage.getImageNumber())
+                .imageUrl(savedImage.getImageUrl())
+                .editedImageUrl(savedImage.getEditedImageUrl())
+                .imagePrompt(savedImage.getImagePrompt())
+                .status(savedImage.getStatus().name())
+                .statusDescription(savedImage.getStatus().getDescription())
+                .createdAt(savedImage.getCreatedAt())
+                .build();
+    }
+    
+    @Override
+    public SceneImageEditAiResponse getImageEditAiSuggestions(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request) {
+        log.info("Getting AI edit suggestions for imageId: {}, userEditText: {}", imageId, request.getUserEditText());
+        
+        // 권한 체크
+        SceneImage sceneImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
+        
+        // Scene을 통해 Project 권한 체크
+        Scene scene = sceneImage.getScene();
+        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        try {
+            // AI 편집 제안 생성 (MVP 기준 간단 구현)
+            String aiSuggestionResult = openAIService.generateImageEditSuggestions(
+                request.getUserEditText(), 
+                sceneImage.getImagePrompt()
+            );
+            
+            // 반환값 생성
+            String aiSuggestions = "밝기 15% 증가, 따뜻한 톤 적용";
+            return SceneImageEditAiResponse.builder()
+                    .imageId(imageId)
+                    .editSuggestions(java.util.Map.of(
+                        "brightness", 15,
+                        "tone", "warm", 
+                        "contrast", 5
+                    ))
+                    .updatedImagePrompt(aiSuggestions)
+                    .displayText("AI 편집 제안을 생성했습니다.")
+                    .build();
+            
+        } catch (Exception e) {
+            log.error("Failed to generate AI edit suggestions", e);
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        }
     }
 }

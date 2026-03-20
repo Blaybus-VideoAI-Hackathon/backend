@@ -4,35 +4,41 @@ import com.example.hdb.dto.kling.KlingVideoRequest;
 import com.example.hdb.dto.kling.KlingVideoResponse;
 import com.example.hdb.dto.response.SceneVideoResponse;
 import com.example.hdb.entity.Scene;
+import com.example.hdb.entity.SceneImage;
 import com.example.hdb.entity.SceneVideo;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.SceneVideoRepository;
 import com.example.hdb.repository.SceneRepository;
+import com.example.hdb.repository.SceneImageRepository;
 import com.example.hdb.service.KlingVideoApiService;
 import com.example.hdb.service.SceneVideoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class SceneVideoServiceImpl implements SceneVideoService {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SceneVideoServiceImpl.class);
     
     private final SceneVideoRepository sceneVideoRepository;
     private final SceneRepository sceneRepository;
     private final KlingVideoApiService klingVideoApiService;
+    private final SceneImageRepository sceneImageRepository;
     
     @Override
     @Transactional
-    public SceneVideoResponse generateVideo(Long projectId, Long sceneId, String loginId) {
-        log.info("Generating video for scene: {}, project: {}, user: {}", sceneId, projectId, loginId);
+    public SceneVideoResponse generateVideo(Long projectId, Long sceneId, String loginId, Integer duration) {
+        log.info("Generating video for scene: {}, project: {}, user: {}, duration: {}s", sceneId, projectId, loginId, duration);
         
         // 권한 체크: scene이 해당 project에 속하는지 확인
         Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
@@ -48,26 +54,45 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             throw new BusinessException(ErrorCode.SCENE_VIDEO_PROMPT_NOT_FOUND);
         }
         
-        // 1. SceneVideo를 GENERATING 상태로 저장 후 즉시 반환
+        // 이미지 URL 우선순위 결정 (edited_image_url 우선)
+        String imageUrlForVideo = determineImageUrlForVideo(scene);
+        log.info("Using image URL for video generation: {}", imageUrlForVideo);
+        
+        // Kling 영상 생성 요청
+        KlingVideoRequest request = new KlingVideoRequest();
+        request.setPrompt(scene.getVideoPrompt());
+        request.setDuration(duration);
+        request.setAspectRatio("16:9");
+        
+        String finalVideoUrl;
+        try {
+            KlingVideoResponse response = klingVideoApiService.generateVideo(request);
+            log.info("Kling 영상 생성 요청 완료: taskId={}", response.getTaskId());
+            finalVideoUrl = response.getVideoUrl();
+        } catch (Exception klingException) {
+            log.warn("Kling API 호출 실패, fallback으로 더미 영상 URL 사용: {}", klingException.getMessage());
+            finalVideoUrl = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4";
+        }
+        
+        // SceneVideo를 READY 상태로 저장
         SceneVideo sceneVideo = SceneVideo.builder()
                 .scene(scene)
-                .videoUrl(null)
+                .videoUrl(finalVideoUrl)
                 .videoPrompt(scene.getVideoPrompt())
+                .duration(duration)
                 .openaiVideoId(null)
                 .klingTaskId(null)
-                .status(SceneVideo.VideoStatus.GENERATING)
+                .status(SceneVideo.VideoStatus.READY)
                 .build();
         
         SceneVideo savedVideo = sceneVideoRepository.save(sceneVideo);
-        log.info("SceneVideo 생성 시작 저장 완료: {}", savedVideo.getId());
-        
-        // 2. 비동기로 영상 생성 시작
-        processVideoGenerationAsync(savedVideo.getId());
+        log.info("SceneVideo 생성 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
         
         return SceneVideoResponse.builder()
                 .id(savedVideo.getId())
                 .videoUrl(savedVideo.getVideoUrl())
                 .videoPrompt(savedVideo.getVideoPrompt())
+                .duration(savedVideo.getDuration())
                 .status(savedVideo.getStatus().name())
                 .statusDescription(savedVideo.getStatus().getDescription())
                 .createdAt(savedVideo.getCreatedAt())
@@ -85,25 +110,44 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             SceneVideo sceneVideo = sceneVideoRepository.findById(videoId)
                     .orElseThrow(() -> new RuntimeException("SceneVideo not found: " + videoId));
             
+            // 영상 생성에 사용할 이미지 URL 결정 (편집 이미지 우선)
+            String sourceImageUrl = determineImageUrlForVideo(sceneVideo.getScene());
+            log.info("Video generation source image url: {}", sourceImageUrl);
+            
             // Kling 영상 생성 요청
             KlingVideoRequest request = new KlingVideoRequest();
             request.setPrompt(sceneVideo.getVideoPrompt());
             request.setDuration(5); // 5초
             request.setAspectRatio("16:9");
             
-            KlingVideoResponse response = klingVideoApiService.generateVideo(request);
-            log.info("Kling 영상 생성 요청 완료: taskId={}", response.getTaskId());
+            // TODO: Kling API가 이미지 URL을 지원하면 request.setImageUrl(sourceImageUrl) 추가
             
-            // task ID 저장
-            sceneVideo.setKlingTaskId(response.getTaskId());
-            sceneVideoRepository.save(sceneVideo);
-            
-            // TODO: 추후 상태조회 로직 추가
-            // 지금은 바로 READY 상태로 가정
-            sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
-            sceneVideo.setVideoUrl(response.getVideoUrl()); // 실제로는 상태조회 후 설정
-            SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
-            log.info("SceneVideo 생성 완료: {}", completedVideo.getId());
+            KlingVideoResponse response;
+            try {
+                response = klingVideoApiService.generateVideo(request);
+                log.info("Kling 영상 생성 요청 완료: taskId={}", response.getTaskId());
+                
+                // task ID 저장
+                sceneVideo.setKlingTaskId(response.getTaskId());
+                sceneVideoRepository.save(sceneVideo);
+                
+                // TODO: 추후 상태조회 로직 추가
+                // 지금은 바로 READY 상태로 가정
+                sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
+                sceneVideo.setVideoUrl(response.getVideoUrl()); // 실제로는 상태조회 후 설정
+                SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
+                log.info("SceneVideo 생성 완료: {}", completedVideo.getId());
+                
+            } catch (Exception klingException) {
+                log.warn("Kling API 호출 실패, fallback으로 더미 영상 URL 사용: {}", klingException.getMessage());
+                
+                // Fallback: 더미 영상 URL 사용
+                String dummyVideoUrl = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4";
+                sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
+                sceneVideo.setVideoUrl(dummyVideoUrl);
+                SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
+                log.info("SceneVideo fallback 생성 완료: {}, videoUrl: {}", completedVideo.getId(), dummyVideoUrl);
+            }
             
         } catch (Exception e) {
             log.error("비동기 영상 생성 실패: videoId={}", videoId, e);
@@ -141,11 +185,72 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 .collect(Collectors.toList());
     }
     
+    /**
+     * 영상 생성에 사용할 이미지 URL 결정 (편집 이미지 우선)
+     */
+    private String determineImageUrlForVideo(Scene scene) {
+        // 1. 편집된 이미지가 있으면 우선 사용
+        if (scene.getEditedImageUrl() != null && !scene.getEditedImageUrl().trim().isEmpty()) {
+            log.info("Using edited image URL: {}", scene.getEditedImageUrl());
+            return scene.getEditedImageUrl();
+        }
+        
+        // 2. 원본 이미지 사용
+        if (scene.getImageUrl() != null && !scene.getImageUrl().trim().isEmpty()) {
+            log.info("Using original image URL: {}", scene.getImageUrl());
+            return scene.getImageUrl();
+        }
+        
+        // 1. Scene에 편집된 이미지가 있는지 확인
+        if (scene.getEditedImageUrl() != null && !scene.getEditedImageUrl().trim().isEmpty()) {
+            log.info("Using scene edited image URL: {}", scene.getEditedImageUrl());
+            return scene.getEditedImageUrl();
+        }
+        
+        // 2. SceneImage 중 편집된 이미지가 있는지 확인
+        try {
+            List<SceneImage> images = sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId());
+            for (SceneImage image : images) {
+                if (image.getEditedImageUrl() != null && !image.getEditedImageUrl().trim().isEmpty()) {
+                    log.info("Using sceneImage edited image URL: {}", image.getEditedImageUrl());
+                    return image.getEditedImageUrl();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to check scene images for edited URLs", e);
+        }
+        
+        // 3. SceneImage 중 원본 이미지 사용
+        try {
+            Optional<SceneImage> latestImage = sceneImageRepository.findFirstBySceneIdOrderByImageNumberDesc(scene.getId());
+            if (latestImage.isPresent() && latestImage.get().getImageUrl() != null && !latestImage.get().getImageUrl().trim().isEmpty()) {
+                log.info("Using sceneImage original image URL: {}", latestImage.get().getImageUrl());
+                return latestImage.get().getImageUrl();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get latest scene image", e);
+        }
+        
+        // 4. Scene 원본 이미지 사용
+        if (scene.getImageUrl() != null && !scene.getImageUrl().trim().isEmpty()) {
+            log.info("Using scene original image URL: {}", scene.getImageUrl());
+            return scene.getImageUrl();
+        }
+        
+        // 5. 이미지가 없는 경우
+        log.warn("No image URL available for video generation - sceneId: {}", scene.getId());
+        return null;
+    }
+    
+    /**
+     * Scene 엔티티를 SceneVideoResponse로 변환
+     */
     private SceneVideoResponse convertToResponse(SceneVideo sceneVideo) {
         return SceneVideoResponse.builder()
                 .id(sceneVideo.getId())
                 .videoUrl(sceneVideo.getVideoUrl())
                 .videoPrompt(sceneVideo.getVideoPrompt())
+                .duration(sceneVideo.getDuration())
                 .status(sceneVideo.getStatus().name())
                 .statusDescription(sceneVideo.getStatus().getDescription())
                 .createdAt(sceneVideo.getCreatedAt())

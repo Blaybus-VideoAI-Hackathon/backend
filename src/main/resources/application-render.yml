@@ -1,3 +1,5 @@
+# Render 배포용 설정 (Aiven MySQL) - DEPRECATED
+# prod 프로필로 통합됨. 현재는 prod 프로필 사용 권장
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&characterEncoding=UTF-8

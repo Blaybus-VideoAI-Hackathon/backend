@@ -9,9 +9,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Service;
 
 @Service
-@Slf4j
 @ConditionalOnMissingBean(OpenAIService.class)
 public class OpenAIServiceFallback {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAIServiceFallback.class);
     
     public String generateIdea(String coreElements, String style, String ratio) {
         log.warn("OpenAI API Key가 설정되지 않아 Mock 응답을 반환합니다 - coreElements: {}, style: {}, ratio: {}", 

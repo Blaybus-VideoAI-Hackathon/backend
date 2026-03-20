@@ -1,10 +1,12 @@
 package com.example.hdb.service;
 
 import com.example.hdb.dto.request.SceneCreateRequest;
+import com.example.hdb.dto.request.SceneDesignRegenerateRequest;
 import com.example.hdb.dto.request.SceneDesignRequest;
 import com.example.hdb.dto.request.SceneEditRequest;
 import com.example.hdb.dto.request.SceneGenerateRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
+import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 
 import java.util.List;
@@ -27,6 +29,15 @@ public interface SceneService {
     // 특정 Scene 설계 (optional_elements, image_prompt, video_prompt 생성)
     SceneResponse designScene(Long projectId, Long sceneId, String loginId, SceneDesignRequest request);
     
+    // 특정 Scene 설계 다시 추천받기 (summary 유지, variation 생성)
+    SceneDesignResponse regenerateSceneDesign(Long projectId, Long sceneId, String loginId, SceneDesignRegenerateRequest request);
+    
+    // 특정 Scene 설계 조회
+    SceneDesignResponse getSceneDesign(Long projectId, Long sceneId, String loginId);
+    
     // 특정 Scene 수정 (optional_elements, image_prompt, video_prompt 업데이트)
     SceneResponse editScene(Long projectId, Long sceneId, String loginId, SceneEditRequest request);
+    
+    // 특정 Scene 삭제 (관련 데이터 함께 삭제)
+    void deleteScene(Long projectId, Long sceneId, String loginId);
 }

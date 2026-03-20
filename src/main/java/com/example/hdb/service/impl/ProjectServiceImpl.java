@@ -13,6 +13,7 @@ import com.example.hdb.entity.Project;
 import com.example.hdb.entity.ProjectStatus;
 import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.User;
+import com.example.hdb.enums.PlanningStatus;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectRepository;
@@ -30,9 +31,10 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional
 public class ProjectServiceImpl implements ProjectService {
+    
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ProjectServiceImpl.class);
     
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
@@ -40,12 +42,6 @@ public class ProjectServiceImpl implements ProjectService {
     private final OpenAIService openAIService;
     
     // ========== loginId 기반 메서드 (ProjectServiceNew에서 병합) ==========
-    
-    @Override
-    public ProjectResponse createProject(ProjectCreateRequest request) {
-        // 이 메서드는 더 이상 사용하지 않음 (loginId 기반으로 변경)
-        throw new UnsupportedOperationException("이 메서드는 더 이상 사용되지 않습니다. loginId 기반 메서드를 사용하세요.");
-    }
     
     /**
      * loginId 기반 프로젝트 생성 (신규 추가)
@@ -57,7 +53,6 @@ public class ProjectServiceImpl implements ProjectService {
         User user = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         
-        // 프로젝트 생성
         Project project = Project.builder()
                 .user(user)
                 .title(request.getTitle())
@@ -67,26 +62,13 @@ public class ProjectServiceImpl implements ProjectService {
                 .duration(request.getDuration())
                 .ideaText(request.getIdeaText())
                 .coreElements(request.getCoreElements())
-                .planningStatus(request.getPlanningStatus())
-                .status(ProjectStatus.PLANNING)
+                .planningStatus(PlanningStatus.COMPLETED)
                 .build();
         
         Project savedProject = projectRepository.save(project);
         log.info("Project created successfully with id: {}", savedProject.getId());
         
         return savedProject;
-    }
-    
-    @Override
-    public List<ProjectResponse> getProjectsByUserId(Long userId) {
-        // userId 기반 메서드는 내부에서 loginId로 변환
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        List<Project> projects = getUserProjects(user.getLoginId());
-        
-        return projects.stream()
-                .map(ProjectResponse::from)
-                .collect(Collectors.toList());
     }
     
     /**
@@ -102,16 +84,6 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Found {} projects for loginId: {}", projects.size(), loginId);
         
         return projects;
-    }
-    
-    @Override
-    public ProjectResponse getProjectById(Long projectId) {
-        log.info("Getting project by id: {}", projectId);
-        
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
-        
-        return ProjectResponse.from(project);
     }
     
     /**
@@ -146,105 +118,7 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Project status updated successfully: {}", updatedProject.getStatus());
         return updatedProject;
     }
-
-    // ========== 기존 userId 기반 메서드 (내부용) ==========
     
-    @Override
-    public ProjectResponse getProjectByIdAndUserId(Long projectId, Long userId) {
-        // userId 기반 메서드는 내부에서 loginId로 변환
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        Project project = getProjectByLoginId(user.getLoginId(), projectId);
-        return ProjectResponse.from(project);
-    }
-    
-    @Override
-    public List<SceneResponse> getScenesByProjectId(Long projectId) {
-        log.info("Getting scenes for projectId: {}", projectId);
-        
-        // 프로젝트 존재 확인
-        if (!projectRepository.existsById(projectId)) {
-            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
-        }
-        
-        List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
-        
-        return scenes.stream()
-                .map(SceneResponse::from)
-                .collect(Collectors.toList());
-    }
-    
-    @Override
-    public List<SceneResponse> getScenesByProjectIdAndUserId(Long projectId, Long userId) {
-        log.info("Getting scenes for projectId: {} and userId: {}", projectId, userId);
-        
-        // 프로젝트 권한 확인
-        if (!projectRepository.existsByIdAndUserId(projectId, userId)) {
-            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
-        }
-        
-        List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
-        
-        return scenes.stream()
-                .map(SceneResponse::from)
-                .collect(Collectors.toList());
-    }
-    
-    @Override
-    public ProjectResponse updateCoreElements(Long projectId, CoreElementsRequest request) {
-        log.info("Updating core elements for projectId: {}", projectId);
-        
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
-        
-        project.setCoreElements(request.getCoreElements());
-        Project updatedProject = projectRepository.save(project);
-        
-        log.info("Core elements updated successfully for projectId: {}", projectId);
-        return ProjectResponse.from(updatedProject);
-    }
-    
-    @Override
-    public ApiResponse<IdeaGenerationResponse> generateProjectIdea(Long projectId, IdeaGenerationRequest request) {
-        log.info("Generating project idea for projectId: {}, userInput: {}", projectId, request.getUserInput());
-        
-        // 프로젝트 존재 확인
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
-        
-        log.info("Project found - style: {}, ratio: {}", project.getStyle(), project.getRatio());
-        
-        try {
-            // OpenAI API 호출로 아이디어 생성
-            String ideaJson = openAIService.generateIdea(
-                request.getUserInput(), 
-                project.getStyle(), 
-                project.getRatio()
-            );
-            
-            log.info("OpenAI API response received: {}", ideaJson);
-            
-            // JSON 파싱 및 응답 생성 (임시)
-            IdeaGenerationResponse response = IdeaGenerationResponse.builder()
-                .coreElements(ideaJson)
-                .displayText("아이디어 생성 완료")
-                .build();
-            
-            // 프로젝트에 결과 저장
-            project.setCoreElements(response.getCoreElements());
-            projectRepository.save(project);
-            
-            log.info("Project idea generated successfully for projectId: {}", projectId);
-            
-            return ApiResponse.success("프로젝트 아이디어 생성 성공", response);
-            
-        } catch (Exception e) {
-            log.error("Failed to generate project idea for projectId: {}", projectId, e);
-            throw e;
-        }
-    }
-    
-    @Override
     public ApiResponse<SceneGenerationResponse> generateProjectScenes(Long projectId, SceneGenerationRequest request) {
         log.info("Generating project scenes for projectId: {}, sceneIdea: {}", projectId, request.getSceneIdea());
         

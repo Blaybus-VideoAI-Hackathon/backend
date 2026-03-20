@@ -2,8 +2,10 @@ package com.example.hdb.service;
 
 import com.example.hdb.dto.openai.OpenAIRequest;
 import com.example.hdb.dto.openai.OpenAIResponse;
+import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,17 +14,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 @Service
-@Slf4j
 @ConditionalOnProperty(name = "openai.api-key", matchIfMissing = false)
 public class OpenAIService {
     
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAIService.class);
+    
     private final RestTemplate openAiRestTemplate;
     private final String openaiApiUrl;
+    private final ObjectMapper objectMapper;
     
     public OpenAIService(RestTemplate openAiRestTemplate, 
-                                   @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl) {
+                                   @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl,
+                                   ObjectMapper objectMapper) {
         this.openAiRestTemplate = openAiRestTemplate;
         this.openaiApiUrl = openaiApiUrl;
+        this.objectMapper = objectMapper;
     }
     
     public String generateIdea(String coreElements, String style, String ratio) {
@@ -248,6 +254,77 @@ public class OpenAIService {
         }
     }
     
+    public String generateSceneDesignWithVariation(String summary) {
+        String systemPrompt = "당신은 비디오 씬 설계 전문가입니다. 동일한 씬에 대해 다양한 버전의 설계를 제공해주세요.";
+        
+        String userPrompt = String.format("""
+            다음 씬 요약에 대해 새로운 버전의 설계를 생성해주세요:
+            
+            씬 요약: %s
+            
+            기존과 다른 버전으로 아래 요소들을 새롭게 구성해주세요:
+            - 행동 (action)
+            - 포즈 (pose)
+            - 구도/카메라 (camera)
+            - 조명 (lighting)
+            - 무드 (mood)
+            - 시간대 (timeOfDay)
+            
+            응답은 JSON 형식으로 다음과 같이 제공해주세요:
+            {
+              "displayText": "행동: 주요 인물이 장면을 탐색함\\n포즈: 자연스러운 입장 자세\\n구도: 중간 거리 쇼트\\n조명: 장면에 맞는 조명\\n무드: 호기심 또는 기대감\\n시간대: 상황에 적합한 시간",
+              "imagePrompt": "Character entering the scene with natural posture, medium shot, appropriate lighting, curious or expectant mood, suitable time of day",
+              "videoPrompt": "Scene showing character entering with natural movement, medium distance view, proper lighting, atmosphere matching the scene context"
+            }
+            """, summary);
+        
+        String jsonResponse = callOpenAI(systemPrompt, userPrompt);
+        
+        try {
+            // JSON 응답을 SceneDesignResponse로 파싱
+            SceneDesignResponse response = objectMapper.readValue(jsonResponse, SceneDesignResponse.class);
+            log.info("Successfully parsed scene design response: {}", response.getDisplayText());
+            return jsonResponse;
+        } catch (Exception e) {
+            log.error("Failed to parse scene design response: {}", jsonResponse, e);
+            // 파싱 실패 시 원본 JSON 반환
+            return jsonResponse;
+        }
+    }
+    
+    public String generateImageEditSuggestions(String userEditText, String currentImagePrompt) {
+        String systemPrompt = "당신은 이미지 편집 전문가입니다. 사용자의 자연어 요청을 구조화된 편집 파라미터로 변환해주세요.";
+        
+        String userPrompt = String.format("""
+            사용자가 다음과 같이 이미지 편집을 요청했습니다:
+            
+            사용자 요청: %s
+            현재 이미지 프롬프트: %s
+            
+            사용자 요청을 분석하여 아래 형식으로 편집 파라미터를 추천해주세요:
+            
+            1. 밝기 조절 요청: brightness 값 (0-100)
+            2. 톤/분위기 변경: tone 값 (warm, cool, neutral, vivid, soft)
+            3. 대비 조절: contrast 값 (-50 ~ +50)
+            4. 강조 대상: emphasis (person, background, object)
+            5. 수정된 프롬프트: updatedPrompt (이미지 재생성용)
+            
+            응답은 JSON 형식으로 제공해주세요:
+            {
+              "analysis": "사용자 요청 분석",
+              "editSuggestions": {
+                "brightness": 15,
+                "tone": "warm",
+                "contrast": 5,
+                "emphasis": "main_subject"
+              },
+              "updatedPrompt": "Main subject with warm lighting and enhanced brightness"
+            }
+            """, userEditText, currentImagePrompt);
+        
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+    
     private String callOpenAI(String systemPrompt, String userPrompt) {
         try {
             log.info("Calling OpenAI API - systemPrompt length: {}, userPrompt length: {}", 
@@ -273,6 +350,14 @@ public class OpenAIService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             
             HttpEntity<OpenAIRequest> entity = new HttpEntity<>(request, headers);
+            
+            // 실제 전송될 JSON 로깅
+            try {
+                String actualRequestJson = objectMapper.writeValueAsString(request);
+                log.info("OpenAI actual request json: {}", actualRequestJson);
+            } catch (Exception e) {
+                log.warn("Failed to serialize OpenAI request for logging", e);
+            }
             
             // API 호출
             ResponseEntity<OpenAIResponse> response = openAiRestTemplate.exchange(

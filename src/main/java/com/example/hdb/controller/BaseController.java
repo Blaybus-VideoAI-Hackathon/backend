@@ -1,10 +1,10 @@
 package com.example.hdb.controller;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 
-@Slf4j
 public class BaseController {
+    
+    protected static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BaseController.class);
     
     protected String resolveLoginId(Authentication authentication) {
         log.info("authentication = {}", authentication);

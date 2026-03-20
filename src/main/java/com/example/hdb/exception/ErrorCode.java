@@ -13,6 +13,11 @@ public enum ErrorCode {
     SCENE_NOT_FOUND("SCENE_001", "씬을 찾을 수 없습니다."),
     SCENE_IMAGE_PROMPT_NOT_FOUND("SCENE_002", "씬의 이미지 프롬프트를 찾을 수 없습니다."),
     SCENE_VIDEO_PROMPT_NOT_FOUND("SCENE_003", "씬의 영상 프롬프트를 찾을 수 없습니다."),
+    SCENE_DELETION_FAILED("SCENE_004", "씬 삭제에 실패했습니다."),
+    IMAGE_NOT_FOUND("SCENE_005", "이미지를 찾을 수 없습니다."),
+    
+    // 영상 관련
+    VIDEO_MERGE_FAILED("VIDEO_001", "영상 병합에 실패했습니다."),
     
     // LLM 관련
     LLM_SERVICE_ERROR("LLM_001", "LLM 서비스 오류가 발생했습니다."),

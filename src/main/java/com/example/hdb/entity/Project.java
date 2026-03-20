@@ -1,6 +1,7 @@
 package com.example.hdb.entity;
 
 import com.example.hdb.enums.PlanningStatus;
+import com.example.hdb.entity.ProjectStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -56,4 +57,8 @@ public class Project extends BaseTimeEntity {
     @Column(nullable = false)
     @Builder.Default
     private ProjectStatus status = ProjectStatus.PLANNING;
+    
+    // 최종 병합 영상 URL
+    @Column(name = "final_video_url", length = 500)
+    private String finalVideoUrl;
 }

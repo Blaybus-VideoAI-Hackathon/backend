@@ -37,9 +37,12 @@ public class SceneVideo extends BaseTimeEntity {
 
     @Column(length = 1000)
     private String videoPrompt;
-
+    
+    @Column(name = "duration")
+    private Integer duration;
+    
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 50)
     private VideoStatus status;
 
     public enum VideoStatus {

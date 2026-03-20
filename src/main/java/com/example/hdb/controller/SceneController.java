@@ -2,10 +2,12 @@ package com.example.hdb.controller;
 
 import com.example.hdb.dto.common.ApiResponse;
 import com.example.hdb.dto.request.SceneCreateRequest;
+import com.example.hdb.dto.request.SceneDesignRegenerateRequest;
 import com.example.hdb.dto.request.SceneDesignRequest;
 import com.example.hdb.dto.request.SceneEditRequest;
 import com.example.hdb.dto.request.SceneGenerateRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
+import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.service.SceneService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -109,19 +111,63 @@ public class SceneController extends BaseController {
         return ResponseEntity.ok(ApiResponse.success("씬 설계 성공", scene));
     }
     
-    @Operation(summary = "씬 수정", description = "특정 씬의 optional_elements, image_prompt, video_prompt를 수정합니다.")
-    @PostMapping("/projects/{projectId}/scenes/{sceneId}/edit")
-    public ResponseEntity<ApiResponse<SceneResponse>> editScene(
+    @Operation(summary = "씬 목록 조회", description = "프로젝트별 씬 목록을 조회합니다.")
+    @GetMapping("/projects/{projectId}/scenes")
+    public ResponseEntity<ApiResponse<List<SceneResponse>>> getScenesByProjectId(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
-            @Parameter(description = "씬 ID") @PathVariable Long sceneId,
-            @Valid @RequestBody SceneEditRequest request,
             Authentication authentication) {
         
-        log.info("Editing scene: {} for project: {}, optionalElements: {}", sceneId, projectId, request.getOptionalElements());
+        log.info("Getting scenes for projectId: {}", projectId);
         
         String loginId = resolveLoginId(authentication);
-        SceneResponse scene = sceneService.editScene(projectId, sceneId, loginId, request);
+        List<SceneResponse> scenes = sceneService.getScenesByProjectId(projectId);
         
-        return ResponseEntity.ok(ApiResponse.success("씬 수정 성공", scene));
+        return ResponseEntity.ok(ApiResponse.success("Scene 목록 조회 성공", scenes));
+    }
+    
+    @Operation(summary = "씬 설계 재추천", description = "특정 씬의 설계를 새로운 버전으로 재추천합니다.")
+    @PostMapping("/projects/{projectId}/scenes/{sceneId}/design/regenerate")
+    public ResponseEntity<ApiResponse<SceneDesignResponse>> regenerateSceneDesign(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Parameter(description = "씬 ID") @PathVariable Long sceneId,
+            @RequestBody(required = false) SceneDesignRegenerateRequest request,
+            Authentication authentication) {
+        
+        log.info("Regenerating design for scene: {} in project: {}", sceneId, projectId);
+        
+        String loginId = resolveLoginId(authentication);
+        SceneDesignResponse response = sceneService.regenerateSceneDesign(projectId, sceneId, loginId, request);
+        
+        return ResponseEntity.ok(ApiResponse.success("씬 설계 재추천 성공", response));
+    }
+    
+    @Operation(summary = "씬 설계 조회", description = "특정 씬의 설계 결과를 조회합니다.")
+    @GetMapping("/projects/{projectId}/scenes/{sceneId}/design")
+    public ResponseEntity<ApiResponse<SceneDesignResponse>> getSceneDesign(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Parameter(description = "씬 ID") @PathVariable Long sceneId,
+            Authentication authentication) {
+        
+        log.info("Getting design for scene: {} in project: {}", sceneId, projectId);
+        
+        String loginId = resolveLoginId(authentication);
+        SceneDesignResponse response = sceneService.getSceneDesign(projectId, sceneId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("씬 설계 조회 성공", response));
+    }
+    
+    @Operation(summary = "씬 삭제", description = "특정 씬을 삭제합니다. 관련된 이미지와 영상도 함께 삭제됩니다.")
+    @DeleteMapping("/projects/{projectId}/scenes/{sceneId}")
+    public ResponseEntity<ApiResponse<Object>> deleteScene(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Parameter(description = "씬 ID") @PathVariable Long sceneId,
+            Authentication authentication) {
+        
+        log.info("Deleting scene: {} for project: {}", sceneId, projectId);
+        
+        String loginId = resolveLoginId(authentication);
+        sceneService.deleteScene(projectId, sceneId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("Scene 삭제 완료", java.util.Map.of("deletedSceneId", sceneId)));
     }
 }

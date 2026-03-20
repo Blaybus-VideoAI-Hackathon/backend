@@ -1,3 +1,5 @@
+# 로컬 개발용 기본 설정 (H2 메모리 DB)
+# 별도 profile 지정 없을 때 사용되는 기본값
 spring:
   datasource:
     url: jdbc:h2:mem:testdb

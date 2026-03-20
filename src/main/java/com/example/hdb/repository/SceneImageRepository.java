@@ -15,4 +15,10 @@ public interface SceneImageRepository extends JpaRepository<SceneImage, Long> {
     Optional<SceneImage> findFirstBySceneIdOrderByImageNumberDesc(Long sceneId);
 
     List<SceneImage> findByStatus(SceneImage.ImageStatus status);
+    
+    // Scene에 속한 모든 이미지 삭제
+    void deleteAllBySceneId(Long sceneId);
+    
+    // imageId와 sceneId로 이미지 찾기
+    Optional<SceneImage> findByIdAndSceneId(Long imageId, Long sceneId);
 }

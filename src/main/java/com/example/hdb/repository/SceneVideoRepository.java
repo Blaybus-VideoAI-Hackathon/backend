@@ -18,4 +18,7 @@ public interface SceneVideoRepository extends JpaRepository<SceneVideo, Long> {
     Optional<SceneVideo> findFirstBySceneIdOrderByCreatedAtDesc(Long sceneId);
 
     List<SceneVideo> findByStatus(SceneVideo.VideoStatus status);
+    
+    // Scene에 속한 모든 영상 삭제
+    void deleteAllBySceneId(Long sceneId);
 }
