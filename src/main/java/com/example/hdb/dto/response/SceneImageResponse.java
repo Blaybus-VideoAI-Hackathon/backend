@@ -20,4 +20,5 @@ public class SceneImageResponse {
     private String status;
     private String statusDescription;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

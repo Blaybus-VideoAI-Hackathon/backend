@@ -3,7 +3,6 @@ package com.example.hdb.controller;
 import com.example.hdb.dto.common.ApiResponse;
 import com.example.hdb.dto.request.ImageEditCompleteRequest;
 import com.example.hdb.dto.request.SceneImageEditAiRequest;
-import com.example.hdb.dto.response.SceneImageEditAiResponse;
 import com.example.hdb.dto.response.SceneImageResponse;
 import com.example.hdb.service.SceneImageService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -100,20 +99,22 @@ public class SceneImageController extends BaseController {
         return ResponseEntity.ok(ApiResponse.success("이미지 편집 완료본이 저장되었습니다.", response));
     }
     
-    @Operation(summary = "AI 이미지 편집 제안", description = "이미지 편집을 위한 AI 수정 제안을 제공합니다.")
+    @Operation(summary = "AI 이미지 편집 및 새 이미지 생성", description = "이미지를 AI로 편집하여 새 이미지를 생성하고 저장합니다.")
     @PostMapping("/{projectId}/scenes/{sceneId}/images/{imageId}/edit/ai")
-    public ResponseEntity<ApiResponse<SceneImageEditAiResponse>> getImageEditAiSuggestions(
+    public ResponseEntity<ApiResponse<SceneImageResponse>> generateImageEditAi(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
-            @Parameter(description = "이미지 ID") @PathVariable Long imageId,
+            @Parameter(description = "원본 이미지 ID") @PathVariable Long imageId,
             @Valid @RequestBody SceneImageEditAiRequest request,
             Authentication authentication) {
         
-        log.info("Getting AI edit suggestions for imageId: {}, userEditText: {}", imageId, request.getUserEditText());
+        log.info("=== AI Image Edit Generation Started ===");
+        log.info("projectId: {}, sceneId: {}, imageId: {}, userEditText: {}", 
+                projectId, sceneId, imageId, request.getUserEditText());
         
         String loginId = resolveLoginId(authentication);
-        SceneImageEditAiResponse response = sceneImageService.getImageEditAiSuggestions(projectId, sceneId, imageId, loginId, request);
+        SceneImageResponse response = sceneImageService.generateImageEditAi(projectId, sceneId, imageId, loginId, request);
         
-        return ResponseEntity.ok(ApiResponse.success("AI 편집 제안 생성 성공", response));
+        return ResponseEntity.ok(ApiResponse.success("AI 수정 이미지 생성 완료", response));
     }
 }

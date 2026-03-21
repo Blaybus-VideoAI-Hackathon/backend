@@ -527,4 +527,66 @@ public class OpenAIService {
         log.info("Generated fallback response: {}", jsonResponse);
         return jsonResponse;
     }
+    
+    /**
+     * 이미지 편집 제안 규칙 기반 fallback 응답 생성
+     */
+    public String generateImageEditFallbackResponse(String userEditText, String imagePrompt) {
+        log.warn("AI 이미지 편집 제안 fallback 사용");
+        
+        String lowerRequest = userEditText.toLowerCase();
+        String editType = "none";
+        String suggestion = "기본 편집 제안";
+        
+        // 밝기 관련 키워드
+        if (lowerRequest.contains("밝기") || lowerRequest.contains("밝게")) {
+            editType = "brightness";
+            suggestion = "brightness +15";
+        } else if (lowerRequest.contains("어둡게")) {
+            editType = "brightness";
+            suggestion = "brightness -15";
+        }
+        
+        // 톤 관련 키워드
+        if (lowerRequest.contains("따뜻") || lowerRequest.contains("웜톤")) {
+            if (!editType.equals("none")) {
+                editType = "combined";
+            } else {
+                editType = "tone";
+            }
+            suggestion = suggestion.equals("기본 편집 제안") ? "warm tone applied" : suggestion + ", warm tone applied";
+        } else if (lowerRequest.contains("차갑") || lowerRequest.contains("쿨톤")) {
+            if (!editType.equals("none")) {
+                editType = "combined";
+            } else {
+                editType = "tone";
+            }
+            suggestion = suggestion.equals("기본 편집 제안") ? "cool tone applied" : suggestion + ", cool tone applied";
+        }
+        
+        // 자르기 관련 키워드
+        if (lowerRequest.contains("자르") || lowerRequest.contains("크롭")) {
+            if (!editType.equals("none")) {
+                editType = "combined";
+            } else {
+                editType = "crop";
+            }
+            suggestion = suggestion.equals("기본 편집 제안") ? "center crop recommended" : suggestion + ", center crop recommended";
+        }
+        
+        // JSON 응답 생성
+        String jsonResponse = String.format("""
+            {
+              "editType": "%s",
+              "suggestion": "%s",
+              "editSuggestions": {
+                "editType": "%s",
+                "value": "%s"
+              }
+            }
+            """, editType, suggestion, editType, suggestion);
+        
+        log.info("Generated image edit fallback response: {}", jsonResponse);
+        return jsonResponse;
+    }
 }

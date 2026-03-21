@@ -2,6 +2,8 @@ package com.example.hdb.repository;
 
 import com.example.hdb.entity.SceneImage;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -21,4 +23,8 @@ public interface SceneImageRepository extends JpaRepository<SceneImage, Long> {
     
     // imageId와 sceneId로 이미지 찾기
     Optional<SceneImage> findByIdAndSceneId(Long imageId, Long sceneId);
+    
+    // Scene 내 최대 imageNumber 조회
+    @Query("SELECT MAX(si.imageNumber) FROM SceneImage si WHERE si.scene.id = :sceneId")
+    Integer findMaxImageNumberBySceneId(@Param("sceneId") Long sceneId);
 }

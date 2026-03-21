@@ -47,13 +47,13 @@ public interface SceneImageService {
     SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId, String loginId, ImageEditCompleteRequest request);
     
     /**
-     * AI 이미지 편집 제안 생성
+     * AI 이미지 편집 및 새 이미지 생성
      * @param projectId 프로젝트 ID
      * @param sceneId 씬 ID
-     * @param imageId 이미지 ID
+     * @param imageId 원본 이미지 ID
      * @param loginId 사용자 ID
      * @param request AI 편집 요청
-     * @return AI 편집 제안 응답
+     * @return 새로 생성된 이미지 정보
      */
-    SceneImageEditAiResponse getImageEditAiSuggestions(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request);
+    SceneImageResponse generateImageEditAi(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request);
 }

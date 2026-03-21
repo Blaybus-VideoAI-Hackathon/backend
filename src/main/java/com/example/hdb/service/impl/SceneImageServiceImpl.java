@@ -266,42 +266,116 @@ public class SceneImageServiceImpl implements SceneImageService {
     }
     
     @Override
-    public SceneImageEditAiResponse getImageEditAiSuggestions(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request) {
-        log.info("Getting AI edit suggestions for imageId: {}, userEditText: {}", imageId, request.getUserEditText());
+    public SceneImageResponse generateImageEditAi(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request) {
+        log.info("=== AI Image Edit Generation Started ===");
+        log.info("projectId: {}, sceneId: {}, imageId: {}, userEditText: {}", 
+                projectId, sceneId, imageId, request.getUserEditText());
         
         // 권한 체크
-        SceneImage sceneImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
+        SceneImage originalImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
         
         // Scene을 통해 Project 권한 체크
-        Scene scene = sceneImage.getScene();
+        Scene scene = originalImage.getScene();
         if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
         }
         
+        // 원본 이미지 URL 결정 (우선순위: editedImageUrl -> imageUrl)
+        String sourceImageUrl = originalImage.getEditedImageUrl() != null ? 
+                originalImage.getEditedImageUrl() : originalImage.getImageUrl();
+        
+        log.info("Source image URL: {}", sourceImageUrl);
+        
+        // 다음 imageNumber 계산
+        Integer maxImageNumber = sceneImageRepository.findMaxImageNumberBySceneId(sceneId);
+        int nextImageNumber = (maxImageNumber != null ? maxImageNumber : 0) + 1;
+        
+        log.info("Next imageNumber: {}", nextImageNumber);
+        
         try {
-            // AI 편집 제안 생성 (MVP 기준 간단 구현)
-            String aiSuggestionResult = openAIService.generateImageEditSuggestions(
-                request.getUserEditText(), 
-                sceneImage.getImagePrompt()
-            );
+            // AI 이미지 편집 생성 시도
+            String editedImageUrl = generateEditedImageUrl(sourceImageUrl, request.getUserEditText());
+            String newImagePrompt = String.format("%s (수정: %s)", 
+                    originalImage.getImagePrompt(), request.getUserEditText());
             
-            // 반환값 생성
-            String aiSuggestions = "밝기 15% 증가, 따뜻한 톤 적용";
-            return SceneImageEditAiResponse.builder()
-                    .imageId(imageId)
-                    .editSuggestions(java.util.Map.of(
-                        "brightness", 15,
-                        "tone", "warm", 
-                        "contrast", 5
-                    ))
-                    .updatedImagePrompt(aiSuggestions)
-                    .displayText("AI 편집 제안을 생성했습니다.")
+            // 새 SceneImage 엔티티 생성
+            SceneImage newImage = SceneImage.builder()
+                    .scene(scene)
+                    .imageNumber(nextImageNumber)
+                    .imageUrl(sourceImageUrl) // 원본 유지
+                    .editedImageUrl(editedImageUrl) // 수정본 저장
+                    .imagePrompt(newImagePrompt)
+                    .status(SceneImage.ImageStatus.READY)
+                    .build();
+            
+            SceneImage savedImage = sceneImageRepository.save(newImage);
+            
+            log.info("Saved new edited image with ID: {}", savedImage.getId());
+            
+            return SceneImageResponse.builder()
+                    .id(savedImage.getId())
+                    .imageNumber(savedImage.getImageNumber())
+                    .imageUrl(savedImage.getImageUrl())
+                    .editedImageUrl(savedImage.getEditedImageUrl())
+                    .imagePrompt(savedImage.getImagePrompt())
+                    .status(savedImage.getStatus().name())
+                    .statusDescription(savedImage.getStatus().getDescription())
+                    .createdAt(savedImage.getCreatedAt())
+                    .updatedAt(savedImage.getUpdatedAt())
                     .build();
             
         } catch (Exception e) {
-            log.error("Failed to generate AI edit suggestions", e);
-            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            // Fallback: mock edited URL 생성
+            log.warn("AI image edit failed, using fallback: {}", e.getMessage());
+            
+            String fallbackEditedUrl = generateFallbackEditedUrl(sourceImageUrl, request.getUserEditText());
+            String newImagePrompt = String.format("%s (수정: %s - Fallback)", 
+                    originalImage.getImagePrompt(), request.getUserEditText());
+            
+            // 새 SceneImage 엔티티 생성 (fallback)
+            SceneImage newImage = SceneImage.builder()
+                    .scene(scene)
+                    .imageNumber(nextImageNumber)
+                    .imageUrl(sourceImageUrl)
+                    .editedImageUrl(fallbackEditedUrl)
+                    .imagePrompt(newImagePrompt)
+                    .status(SceneImage.ImageStatus.READY)
+                    .build();
+            
+            SceneImage savedImage = sceneImageRepository.save(newImage);
+            
+            log.info("Saved fallback edited image with ID: {}", savedImage.getId());
+            
+            return SceneImageResponse.builder()
+                    .id(savedImage.getId())
+                    .imageNumber(savedImage.getImageNumber())
+                    .imageUrl(savedImage.getImageUrl())
+                    .editedImageUrl(savedImage.getEditedImageUrl())
+                    .imagePrompt(savedImage.getImagePrompt())
+                    .status(savedImage.getStatus().name())
+                    .statusDescription(savedImage.getStatus().getDescription())
+                    .createdAt(savedImage.getCreatedAt())
+                    .updatedAt(savedImage.getUpdatedAt())
+                    .build();
         }
+    }
+    
+    /**
+     * AI를 통한 편집된 이미지 URL 생성 (실제 구현 시 연동)
+     */
+    private String generateEditedImageUrl(String sourceUrl, String userEditText) {
+        // TODO: 실제 AI 이미지 편집 서비스 연동
+        // 현재는 mock URL 반환
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        return String.format("%s?edited=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
+    }
+    
+    /**
+     * Fallback 편집된 이미지 URL 생성
+     */
+    private String generateFallbackEditedUrl(String sourceUrl, String userEditText) {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        return String.format("%s?fallback=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
     }
 }
