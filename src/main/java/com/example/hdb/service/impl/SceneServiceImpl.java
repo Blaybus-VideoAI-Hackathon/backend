@@ -566,9 +566,37 @@ public class SceneServiceImpl implements SceneService {
                     .updatedAt(updatedScene.getUpdatedAt())
                     .build();
             
-        } catch (Exception e) {
-            log.error("씬 설계 재추천 실패", e);
-            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        } catch (BusinessException e) {
+            // OpenAI 실패 시 fallback 사용
+            log.warn("OpenAI API 실패, fallback 규칙 기반 응답 사용: {}", e.getMessage());
+            
+            String variationRequest = request != null ? request.getUserRequest() : "같은 장면의 다른 연출 버전";
+            String fallbackResponse = openAIService.generateFallbackResponse(scene.getSummary(), variationRequest);
+            
+            // fallback 응답 파싱
+            String json = JsonUtils.extractJsonSafely(fallbackResponse);
+            log.info("Fallback에서 추출된 JSON: {}", json);
+            OptionalElements newOptionalElements = parseOptionalElements(json);
+            
+            // 새로운 프롬프트 생성
+            String newImagePrompt = generateImagePromptFromElements(scene.getSummary(), newOptionalElements);
+            String newVideoPrompt = generateVideoPromptFromElements(scene.getSummary(), newOptionalElements);
+            
+            // Scene 업데이트
+            scene.setOptionalElements(createOptionalElementsJson(newOptionalElements));
+            scene.setImagePrompt(newImagePrompt);
+            scene.setVideoPrompt(newVideoPrompt);
+            Scene updatedScene = sceneRepository.save(scene);
+            
+            return SceneDesignResponse.builder()
+                    .sceneId(updatedScene.getId())
+                    .summary(updatedScene.getSummary())
+                    .optionalElements(newOptionalElements)
+                    .imagePrompt(updatedScene.getImagePrompt())
+                    .videoPrompt(updatedScene.getVideoPrompt())
+                    .displayText("같은 장면을 다른 연출로 다시 추천했습니다. (Fallback)")
+                    .updatedAt(updatedScene.getUpdatedAt())
+                    .build();
         }
     }
     

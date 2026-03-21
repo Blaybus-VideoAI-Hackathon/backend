@@ -7,6 +7,7 @@ import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -26,7 +27,7 @@ public class OpenAIService {
     private final String openAiApiKey;
     private final ObjectMapper objectMapper;
     
-    public OpenAIService(RestTemplate openAiRestTemplate, 
+    public OpenAIService(@Qualifier("openAiRestTemplate") RestTemplate openAiRestTemplate, 
                                    @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl,
                                    @Value("${openai.api-key}") String openAiApiKey,
                                    ObjectMapper objectMapper) {
@@ -356,20 +357,43 @@ public class OpenAIService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             
+            // Authorization 헤더 형식 검증 로그
+            boolean isValidBearer = openAiApiKey != null && openAiApiKey.startsWith("Bearer ");
+            log.info("Authorization prefix valid: {}", isValidBearer);
+            
+            // API 키 마스킹 로그 (앞 10자만 노출)
+            String maskedKey = openAiApiKey != null && openAiApiKey.length() > 10 
+                ? "Bearer sk-" + "*".repeat(openAiApiKey.length() - 10) + openAiApiKey.substring(openAiApiKey.length() - 3)
+                : "INVALID_KEY";
+            log.info("Authorization preview: {}", maskedKey);
+            
             // 요청 직전 로그
             String requestJson = objectMapper.writeValueAsString(request);
-            log.info("Authorization header exists: {}", headers.containsKey("Authorization"));
+            String fullUrl = openaiApiUrl + "/chat/completions";
+            
+            log.info("OpenAI API Request Details:");
+            log.info("URL: {}", fullUrl);
+            log.info("Method: POST");
             log.info("Content-Type: {}", headers.getContentType());
+            log.info("Accept: {}", headers.getAccept());
+            log.info("Authorization header exists: {}", headers.containsKey("Authorization"));
             log.info("Body class: {}", request.getClass().getSimpleName());
             log.info("Body JSON: {}", requestJson);
-            log.info("Exchange body type: {}", request.getClass().getSimpleName());
+            
+            // curl 재현용 로그
+            log.info("curl equivalent: curl -X POST {} -H 'Content-Type: application/json' -H 'Authorization: {}' -d '{}'", 
+                fullUrl, maskedKey, requestJson);
             
             // OpenAIRequest 객체 직접 전송 (이중 직렬화 방지)
             HttpEntity<OpenAIRequest> entity = new HttpEntity<>(request, headers);
             
+            // RestTemplate 설정 확인 로그
+            log.info("RestTemplate class: {}", openAiRestTemplate.getClass().getSimpleName());
+            log.info("RestTemplate interceptors: {}", openAiRestTemplate.getInterceptors().size());
+            
             // API 호출
             ResponseEntity<OpenAIResponse> response = openAiRestTemplate.exchange(
-                openaiApiUrl + "/chat/completions",
+                fullUrl,
                 HttpMethod.POST,
                 entity,
                 OpenAIResponse.class
@@ -379,8 +403,28 @@ public class OpenAIService {
             
             // 응답 실패 시 상세 로그
             if (!response.getStatusCode().is2xxSuccessful()) {
-                String responseBody = response.hasBody() ? response.getBody().toString() : "null body";
-                log.error("OpenAI API failed - status: {}, body: {}", response.getStatusCode(), responseBody);
+                log.error("OpenAI API failed - Status: {}", response.getStatusCode());
+                log.error("Response Headers: {}", response.getHeaders());
+                
+                // Response body 상세 로그
+                String responseBody = "null body";
+                if (response.hasBody()) {
+                    Object body = response.getBody();
+                    if (body != null) {
+                        responseBody = body.toString();
+                        // 응답이 너무 길면 앞 500자만 로그
+                        if (responseBody.length() > 500) {
+                            responseBody = responseBody.substring(0, 500) + "... (truncated)";
+                        }
+                    }
+                }
+                log.error("Response Body: {}", responseBody);
+                
+                // Cloudflare HTML 응답 감지
+                if (responseBody.contains("<html>") && responseBody.contains("cloudflare")) {
+                    log.error("Detected Cloudflare HTML response - Possible DNS/Network issue");
+                }
+                
                 throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
             
@@ -420,5 +464,67 @@ public class OpenAIService {
             log.error("Failed to call OpenAI API", e);
             throw new BusinessException(ErrorCode.LLM_SERVICE_ERROR);
         }
+    }
+    
+    /**
+     * 규칙 기반 fallback 응답 생성
+     */
+    public String generateFallbackResponse(String sceneSummary, String userRequest) {
+        log.warn("OpenAI fallback rule-based response 사용");
+        
+        String mood = "감성적인 분위기";
+        String lighting = "자연스러운 기본 조명";
+        String camera = "아이레벨 구도";
+        String action = "장면 분위기에 맞게 자연스럽게 움직인다";
+        
+        // userRequest 소문자로 변환하여 키워드 검색
+        String lowerRequest = userRequest.toLowerCase();
+        
+        // 분위기/조명 키워드 처리
+        if (lowerRequest.contains("어둡") || lowerRequest.contains("밤") || lowerRequest.contains("차분")) {
+            mood = "차분하고 어두운 분위기";
+            lighting = "낮은 조도의 부드러운 조명";
+        } else if (lowerRequest.contains("밝") || lowerRequest.contains("화사") || lowerRequest.contains("따뜻")) {
+            mood = "밝고 따뜻한 분위기";
+            lighting = "밝은 자연광과 따뜻한 톤";
+        } else if (lowerRequest.contains("노을") || lowerRequest.contains("석양")) {
+            lighting = "노을빛 역광";
+            mood = "감성적이고 따뜻한 분위기";
+        }
+        
+        // 카메라 키워드 처리
+        if (lowerRequest.contains("뒤에서")) {
+            camera = "뒤에서 따라가는 구도";
+        } else if (lowerRequest.contains("위에서") || lowerRequest.contains("탑뷰")) {
+            camera = "위에서 내려다보는 구도";
+        } else if (lowerRequest.contains("아래에서")) {
+            camera = "아래에서 올려다보는 구도";
+        } else if (lowerRequest.contains("클로즈업")) {
+            camera = "클로즈업 구도";
+        } else if (lowerRequest.contains("옆에서")) {
+            camera = "측면 구도";
+        }
+        
+        // 행동 키워드 처리
+        if (lowerRequest.contains("걷")) {
+            action = "천천히 걸어간다";
+        } else if (lowerRequest.contains("웃")) {
+            action = "밝게 미소짓는다";
+        } else if (lowerRequest.contains("바라")) {
+            action = "주변을 바라본다";
+        }
+        
+        // JSON 응답 생성
+        String jsonResponse = String.format("""
+            {
+              "mood": "%s",
+              "lighting": "%s",
+              "camera": "%s",
+              "action": "%s"
+            }
+            """, mood, lighting, camera, action);
+        
+        log.info("Generated fallback response: {}", jsonResponse);
+        return jsonResponse;
     }
 }
