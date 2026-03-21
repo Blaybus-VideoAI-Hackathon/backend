@@ -14,8 +14,8 @@ import lombok.NoArgsConstructor;
 public class SceneDesignRegenerateRequest {
     
     @Schema(
-        description = "재추천 방식",
-        allowableValues = {"variation", "complete"},
+        description = "재추천 방식 (현재는 'variation'만 지원)",
+        allowableValues = {"variation"},
         example = "variation",
         requiredMode = Schema.RequiredMode.NOT_REQUIRED
     )

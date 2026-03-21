@@ -202,6 +202,38 @@ public class SceneImageServiceImpl implements SceneImageService {
     }
     
     @Override
+    public List<SceneImageResponse> getProjectImages(Long projectId, String loginId) {
+        log.info("Getting all images for project: {}, user: {}", projectId, loginId);
+        
+        // 권한 체크: 프로젝트 소속 확인
+        if (!sceneRepository.existsById(projectId)) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+        
+        // 프로젝트 내 모든 씬의 이미지 조회
+        List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
+        
+        // 각 씬의 이미지를 모두 수집
+        List<SceneImage> allImages = scenes.stream()
+                .flatMap(scene -> sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId()).stream())
+                .collect(Collectors.toList());
+        
+        return allImages.stream()
+                .map(image -> SceneImageResponse.builder()
+                        .id(image.getId())
+                        .sceneId(image.getScene().getId())
+                        .imageNumber(image.getImageNumber())
+                        .imageUrl(image.getImageUrl())
+                        .editedImageUrl(image.getEditedImageUrl())
+                        .imagePrompt(image.getImagePrompt())
+                        .status(image.getStatus().name())
+                        .statusDescription(image.getStatus().getDescription())
+                        .createdAt(image.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+    
+    @Override
     public SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId, String loginId, ImageEditCompleteRequest request) {
         log.info("Completing image edit for imageId: {}, editedImageUrl: {}", imageId, request.getEditedImageUrl());
         

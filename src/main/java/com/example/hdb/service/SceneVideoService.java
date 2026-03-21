@@ -24,4 +24,12 @@ public interface SceneVideoService {
      * @return 영상 목록
      */
     List<SceneVideoResponse> getVideos(Long projectId, Long sceneId, String loginId);
+    
+    /**
+     * 프로젝트 전체 영상 목록 조회
+     * @param projectId 프로젝트 ID
+     * @param loginId 사용자 ID
+     * @return 프로젝트 내 모든 영상 목록
+     */
+    List<SceneVideoResponse> getProjectVideos(Long projectId, String loginId);
 }

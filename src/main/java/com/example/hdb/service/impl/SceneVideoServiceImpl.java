@@ -185,6 +185,38 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 .collect(Collectors.toList());
     }
     
+    @Override
+    @Transactional(readOnly = true)
+    public List<SceneVideoResponse> getProjectVideos(Long projectId, String loginId) {
+        log.info("Getting all videos for project: {}, user: {}", projectId, loginId);
+        
+        // 권한 체크: 프로젝트 소속 확인
+        if (!sceneRepository.existsById(projectId)) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+        
+        // 프로젝트 내 모든 씬의 영상 조회
+        List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
+        
+        // 각 씬의 영상을 모두 수집
+        List<SceneVideo> allVideos = scenes.stream()
+                .flatMap(scene -> sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(scene.getId()).stream())
+                .collect(Collectors.toList());
+        
+        return allVideos.stream()
+                .map(video -> SceneVideoResponse.builder()
+                        .id(video.getId())
+                        .sceneId(video.getScene().getId())
+                        .duration(video.getDuration())
+                        .videoUrl(video.getVideoUrl())
+                        .videoPrompt(video.getVideoPrompt())
+                        .status(video.getStatus().name())
+                        .statusDescription(video.getStatus().getDescription())
+                        .createdAt(video.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+    
     /**
      * 영상 생성에 사용할 이미지 URL 결정 (편집 이미지 우선)
      */

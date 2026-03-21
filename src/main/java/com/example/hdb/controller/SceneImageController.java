@@ -20,15 +20,28 @@ import jakarta.validation.Valid;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/projects/{projectId}/scenes/{sceneId}/images")
+@RequestMapping("/api/projects")
 @RequiredArgsConstructor
 @Slf4j
 public class SceneImageController extends BaseController {
     
     private final SceneImageService sceneImageService;
     
+    @Operation(summary = "프로젝트 전체 이미지 목록 조회", description = "프로젝트에 속한 모든 씬의 이미지 목록을 조회합니다.")
+    @GetMapping("/{projectId}/images")
+    public ResponseEntity<ApiResponse<List<SceneImageResponse>>> getProjectImages(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId) {
+        
+        log.info("Getting all images for project: {}", projectId);
+        
+        String loginId = "user1"; // 임시 fallback
+        List<SceneImageResponse> images = sceneImageService.getProjectImages(projectId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("프로젝트 이미지 목록 조회 성공", images));
+    }
+    
     @Operation(summary = "씬 이미지 생성", description = "씬의 imagePrompt를 기반으로 이미지를 생성합니다.")
-    @PostMapping("/generate")
+    @PostMapping("/{projectId}/scenes/{sceneId}/images/generate")
     public ResponseEntity<ApiResponse<SceneImageResponse>> generateImage(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
@@ -54,7 +67,7 @@ public class SceneImageController extends BaseController {
     }
     
     @Operation(summary = "씬 이미지 목록 조회", description = "씬에 생성된 모든 이미지를 조회합니다.")
-    @GetMapping
+    @GetMapping("/{projectId}/scenes/{sceneId}/images")
     public ResponseEntity<ApiResponse<List<SceneImageResponse>>> getImages(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
@@ -71,7 +84,7 @@ public class SceneImageController extends BaseController {
     // ========== 이미지 편집 관련 API ==========
     
     @Operation(summary = "이미지 편집 완료", description = "편집된 이미지를 서버에 저장하고 editedImageUrl을 설정합니다.")
-    @PostMapping("/{imageId}/edit/complete")
+    @PostMapping("/{projectId}/scenes/{sceneId}/images/{imageId}/edit/complete")
     public ResponseEntity<ApiResponse<SceneImageResponse>> completeImageEdit(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
@@ -88,7 +101,7 @@ public class SceneImageController extends BaseController {
     }
     
     @Operation(summary = "AI 이미지 편집 제안", description = "이미지 편집을 위한 AI 수정 제안을 제공합니다.")
-    @PostMapping("/{imageId}/edit/ai")
+    @PostMapping("/{projectId}/scenes/{sceneId}/images/{imageId}/edit/ai")
     public ResponseEntity<ApiResponse<SceneImageEditAiResponse>> getImageEditAiSuggestions(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,

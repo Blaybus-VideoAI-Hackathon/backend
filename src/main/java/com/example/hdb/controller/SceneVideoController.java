@@ -20,12 +20,25 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/projects/{projectId}/scenes/{sceneId}/videos")
+@RequestMapping("/api/projects")
 @RequiredArgsConstructor
 @Slf4j
 public class SceneVideoController extends BaseController {
     
     private final SceneVideoService sceneVideoService;
+    
+    @Operation(summary = "프로젝트 전체 영상 목록 조회", description = "프로젝트에 속한 모든 씬의 영상 목록을 조회합니다.")
+    @GetMapping("/{projectId}/videos")
+    public ResponseEntity<ApiResponse<List<SceneVideoResponse>>> getProjectVideos(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId) {
+        
+        log.info("Getting all videos for project: {}", projectId);
+        
+        String loginId = "user1"; // 임시 fallback
+        List<SceneVideoResponse> videos = sceneVideoService.getProjectVideos(projectId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("프로젝트 영상 목록 조회 성공", videos));
+    }
     
     @Operation(
         summary = "씬 영상 생성", 
@@ -55,7 +68,7 @@ public class SceneVideoController extends BaseController {
             )
         )
     )
-    @PostMapping("/generate")
+    @PostMapping("/{projectId}/scenes/{sceneId}/videos/generate")
     public ResponseEntity<ApiResponse<SceneVideoResponse>> generateVideo(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,
@@ -83,7 +96,7 @@ public class SceneVideoController extends BaseController {
     }
     
     @Operation(summary = "씬 영상 목록 조회", description = "씬에 생성된 모든 영상을 조회합니다.")
-    @GetMapping
+    @GetMapping("/{projectId}/scenes/{sceneId}/videos")
     public ResponseEntity<ApiResponse<List<SceneVideoResponse>>> getVideos(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Parameter(description = "씬 ID") @PathVariable Long sceneId,

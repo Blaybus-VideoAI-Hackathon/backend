@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 public class SceneImageResponse {
     
     private Long id;
+    private Long sceneId;
     private Integer imageNumber;
     private String imageUrl;
     private String editedImageUrl;

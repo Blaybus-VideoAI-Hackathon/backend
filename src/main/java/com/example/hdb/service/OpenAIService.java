@@ -13,6 +13,8 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+
 @Service
 @ConditionalOnProperty(name = "openai.api-key", matchIfMissing = false)
 public class OpenAIService {
@@ -21,13 +23,16 @@ public class OpenAIService {
     
     private final RestTemplate openAiRestTemplate;
     private final String openaiApiUrl;
+    private final String openAiApiKey;
     private final ObjectMapper objectMapper;
     
     public OpenAIService(RestTemplate openAiRestTemplate, 
                                    @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl,
+                                   @Value("${openai.api-key}") String openAiApiKey,
                                    ObjectMapper objectMapper) {
         this.openAiRestTemplate = openAiRestTemplate;
         this.openaiApiUrl = openaiApiUrl;
+        this.openAiApiKey = openAiApiKey;
         this.objectMapper = objectMapper;
     }
     
@@ -347,17 +352,20 @@ public class OpenAIService {
             
             // HTTP 요청 설정
             HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(openAiApiKey);
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             
+            // 요청 직전 로그
+            String requestJson = objectMapper.writeValueAsString(request);
+            log.info("Authorization header exists: {}", headers.containsKey("Authorization"));
+            log.info("Content-Type: {}", headers.getContentType());
+            log.info("Body class: {}", request.getClass().getSimpleName());
+            log.info("Body JSON: {}", requestJson);
+            log.info("Exchange body type: {}", request.getClass().getSimpleName());
+            
+            // OpenAIRequest 객체 직접 전송 (이중 직렬화 방지)
             HttpEntity<OpenAIRequest> entity = new HttpEntity<>(request, headers);
-            
-            // 실제 전송될 JSON 로깅
-            try {
-                String actualRequestJson = objectMapper.writeValueAsString(request);
-                log.info("OpenAI actual request json: {}", actualRequestJson);
-            } catch (Exception e) {
-                log.warn("Failed to serialize OpenAI request for logging", e);
-            }
             
             // API 호출
             ResponseEntity<OpenAIResponse> response = openAiRestTemplate.exchange(
@@ -368,7 +376,13 @@ public class OpenAIService {
             );
             
             log.info("OpenAI API response status: {}", response.getStatusCode());
-            log.info("OpenAI API response headers: {}", response.getHeaders());
+            
+            // 응답 실패 시 상세 로그
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                String responseBody = response.hasBody() ? response.getBody().toString() : "null body";
+                log.error("OpenAI API failed - status: {}, body: {}", response.getStatusCode(), responseBody);
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
             
             // 응답 처리
             OpenAIResponse openAIResponse = response.getBody();

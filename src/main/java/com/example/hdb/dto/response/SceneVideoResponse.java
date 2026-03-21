@@ -12,9 +12,10 @@ import java.time.LocalDateTime;
 public class SceneVideoResponse {
     
     private Long id;
+    private Long sceneId;
+    private Integer duration;
     private String videoUrl;
     private String videoPrompt;
-    private Integer duration;
     private String status;
     private String statusDescription;
     private LocalDateTime createdAt;

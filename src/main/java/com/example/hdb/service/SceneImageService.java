@@ -28,6 +28,14 @@ public interface SceneImageService {
     List<SceneImageResponse> getImages(Long projectId, Long sceneId, String loginId);
     
     /**
+     * 프로젝트 전체 이미지 목록 조회
+     * @param projectId 프로젝트 ID
+     * @param loginId 사용자 ID
+     * @return 프로젝트 내 모든 이미지 목록
+     */
+    List<SceneImageResponse> getProjectImages(Long projectId, String loginId);
+    
+    /**
      * 이미지 편집 완료 처리
      * @param projectId 프로젝트 ID
      * @param sceneId 씬 ID

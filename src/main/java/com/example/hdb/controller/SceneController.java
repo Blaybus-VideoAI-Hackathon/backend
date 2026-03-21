@@ -85,12 +85,18 @@ public class SceneController extends BaseController {
     @PostMapping("/projects/{projectId}/scenes/generate")
     public ResponseEntity<ApiResponse<List<SceneResponse>>> generateScenes(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
-            @Valid @RequestBody SceneGenerateRequest request,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = false) @Valid SceneGenerateRequest request,
             Authentication authentication) {
         
         log.info("Generating scenes for projectId: {}, request: {}", projectId, request.getSceneGenerationRequest());
         
-        List<SceneResponse> scenes = sceneService.generateScenes(projectId, request.getSceneGenerationRequest());
+        // sceneGenerationRequest가 null 또는 empty일 경우 기본값 처리
+        String sceneGenerationRequest = request.getSceneGenerationRequest();
+        if (sceneGenerationRequest == null || sceneGenerationRequest.trim().isEmpty()) {
+            sceneGenerationRequest = "프로젝트 기획을 기반으로 씬을 생성해주세요";
+        }
+        
+        List<SceneResponse> scenes = sceneService.generateScenes(projectId, sceneGenerationRequest);
         
         return ResponseEntity.ok(ApiResponse.success("씬 자동 생성 성공", scenes));
     }
