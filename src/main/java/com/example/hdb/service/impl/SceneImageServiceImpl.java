@@ -103,9 +103,9 @@ public class SceneImageServiceImpl implements SceneImageService {
                 String imageUrl = openAIService.generateImage(scene.getImagePrompt());
                 log.info("OpenAI 이미지 생성 완료: {}", imageUrl);
                 
-                // 3. OpenAI 성공 시 status = COMPLETED로 업데이트
+                // 3. OpenAI 성공 시 status = READY로 업데이트
                 savedImage.setImageUrl(imageUrl);
-                savedImage.setStatus(SceneImage.ImageStatus.COMPLETED);
+                savedImage.setStatus(SceneImage.ImageStatus.READY);
                 SceneImage completedImage = sceneImageRepository.save(savedImage);
                 
                 log.info("REAL IMAGE GENERATED - prompt: {}, savedImageId: {}, savedImageUrl: {}", 
@@ -115,35 +115,52 @@ public class SceneImageServiceImpl implements SceneImageService {
                 
                 return SceneImageResponse.builder()
                         .id(completedImage.getId())
+                        .sceneId(completedImage.getScene().getId())
                         .imageNumber(completedImage.getImageNumber())
                         .imageUrl(completedImage.getImageUrl())
+                        .editedImageUrl(completedImage.getEditedImageUrl())
                         .imagePrompt(completedImage.getImagePrompt())
                         .status(completedImage.getStatus().name())
                         .statusDescription(completedImage.getStatus().getDescription())
                         .createdAt(completedImage.getCreatedAt())
+                        .updatedAt(completedImage.getUpdatedAt())
                         .build();
                 
             } catch (Exception openaiException) {
-                log.warn("OpenAI 이미지 생성 실패, fallback으로 mock URL 생성: {}", openaiException.getMessage());
+                log.error("=== IMAGE FALLBACK USED ===");
+                log.error("OpenAI 이미지 생성 실패: {}", openaiException.getMessage());
+                log.error("Scene ID: {}, Scene Order: {}", scene.getId(), scene.getSceneOrder());
+                log.error("Image Prompt: {}", scene.getImagePrompt());
                 
                 // 4. OpenAI 실패 시 fallback URL 생성
                 String fallbackImageUrl = generateFallbackImageUrl(scene.getImagePrompt());
                 savedImage.setImageUrl(fallbackImageUrl);
-                savedImage.setStatus(SceneImage.ImageStatus.COMPLETED);
+                savedImage.setStatus(SceneImage.ImageStatus.READY);
                 SceneImage completedImage = sceneImageRepository.save(savedImage);
                 
-                log.info("IMAGE FALLBACK USED - prompt: {}, savedImageId: {}, fallbackUrl: {}", 
-                        scene.getImagePrompt(), completedImage.getId(), fallbackImageUrl);
+                log.error("IMAGE FALLBACK COMPLETED - fallbackUrl: {}, isPicsum: {}", 
+                        fallbackImageUrl, fallbackImageUrl.contains("picsum"));
                 
-                return SceneImageResponse.builder()
+                // fallback 여부를 응답에 포함
+                SceneImageResponse response = SceneImageResponse.builder()
                         .id(completedImage.getId())
+                        .sceneId(completedImage.getScene().getId())
                         .imageNumber(completedImage.getImageNumber())
                         .imageUrl(completedImage.getImageUrl())
+                        .editedImageUrl(completedImage.getEditedImageUrl())
                         .imagePrompt(completedImage.getImagePrompt())
                         .status(completedImage.getStatus().name())
                         .statusDescription(completedImage.getStatus().getDescription())
                         .createdAt(completedImage.getCreatedAt())
+                        .updatedAt(completedImage.getUpdatedAt())
                         .build();
+                
+                // fallback 플래그 추가 (프론트에서 확인 가능)
+                if (fallbackImageUrl.contains("picsum") || fallbackImageUrl.contains("fallback")) {
+                    response.setFallbackUsed(true);
+                }
+                
+                return response;
             }
             
         } catch (Exception e) {
@@ -331,7 +348,7 @@ public class SceneImageServiceImpl implements SceneImageService {
                     .imageUrl(sourceImageUrl) // 원본 유지
                     .editedImageUrl(editedImageUrl) // 수정본 저장
                     .imagePrompt(newImagePrompt)
-                    .status(SceneImage.ImageStatus.COMPLETED)
+                    .status(SceneImage.ImageStatus.READY)
                     .build();
             
             SceneImage savedImage = sceneImageRepository.save(newImage);
@@ -365,7 +382,7 @@ public class SceneImageServiceImpl implements SceneImageService {
                     .imageUrl(sourceImageUrl)
                     .editedImageUrl(fallbackEditedUrl)
                     .imagePrompt(newImagePrompt)
-                    .status(SceneImage.ImageStatus.COMPLETED)
+                    .status(SceneImage.ImageStatus.READY)
                     .build();
             
             SceneImage savedImage = sceneImageRepository.save(newImage);

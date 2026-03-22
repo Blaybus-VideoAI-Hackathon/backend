@@ -47,6 +47,7 @@ public class SceneImage extends BaseTimeEntity {
 
     public enum ImageStatus {
         GENERATING("생성 중"),
+        READY("준비 완료"),
         COMPLETED("생성 완료"),
         FAILED("실패");
 

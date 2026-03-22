@@ -24,7 +24,7 @@ public interface SceneService {
     
     // ========== 신규 메서드 (Scene 기능 확장) ==========
     // 프로젝트 기획 기반으로 Scene 자동 생성
-    List<SceneResponse> generateScenes(Long projectId, String sceneGenerationRequest);
+    List<SceneResponse> generateScenes(Long projectId, String selectedPlanId, String sceneGenerationRequest);
     
     // 특정 Scene 설계 (optional_elements, image_prompt, video_prompt 생성)
     SceneResponse designScene(Long projectId, Long sceneId, String loginId, SceneDesignRequest request);

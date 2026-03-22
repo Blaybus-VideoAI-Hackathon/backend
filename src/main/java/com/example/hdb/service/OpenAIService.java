@@ -84,103 +84,254 @@ public class OpenAIService {
     // ========== 신규 메서드 (C단계 GPT 연동) ==========
     
     /**
-     * 기획 생성을 위한 OpenAI 호출
+     * 기획 생성을 위한 OpenAI 호출 (3개 기획안 추천 전용)
      */
     public String generatePlan(String userPrompt) {
         String systemPrompt = """
-            당신은 창의적인 비디오 콘텐츠 기획자입니다. 사용자의 요청을 바탕으로 흥미로운 비디오 기획을 생성해주세요.
+            당신은 창의적인 비디오 콘텐츠 기획자입니다. 사용자의 요청을 바탕으로 3가지 완전히 다른 스타일의 기획안을 생성해주세요.
+            
+            각 기획안은 다음과 같이 명확히 다른 방향성을 가져야 합니다:
+            
+            A안: 제품 중심 기획
+            - 제품의 디자인, 특징, 기술적 우수성 강조
+            - 제품의 혁신적인 기능과 차별점을 부각
+            - 테크니컬하고 세련된 톤앤매너
+            - 제품의 아름다움과 성능을 보여주는 장면 구성
+            
+            B안: 감성 중심 기획
+            - 사용자의 라이프스타일과 감성적 경험 강조
+            - 제품이 가져다줄 감동과 변화에 초점
+            - 따뜻하고 감성적인 톤앤매너
+            - 인물의 감정 변화와 일상 속 순간들을 강조
+            
+            C안: 기능 시연 중심 기획
+            - 실제 사용 방법과 활용 장면 구체적으로 보여줌
+            - 문제 해결과 편의성 강조
+            - 실용적이고 신뢰감 있는 톤앤매너
+            - 다양한 사용 상황과 실제 활용 사례 중심
             
             반드시 JSON 형식으로 응답해주세요:
             {
-              "title": "기획 제목",
-              "coreElements": {
-                "mainCharacter": "주요 캐릭터",
-                "background": "배경 설정",
-                "mood": "분위기",
-                "style": "스타일",
-                "storyFlow": "이야기 흐름"
-              }
-            }
-            """;
-        
-        String fullUserPrompt = String.format("""
-            다음 사용자 요청을 바탕으로 비디오 기획을 생성해주세요:
-            
-            사용자 요청: %s
-            
-            위 요청에 맞는 창의적인 비디오 기획을 생성해주세요.
-            """, userPrompt);
-        
-        return callOpenAI(systemPrompt, fullUserPrompt);
-    }
-    
-    /**
-     * Scene 생성을 위한 OpenAI 호출
-     */
-    public String generateScenesFromProject(String projectTitle, String coreElements, String sceneGenerationRequest) {
-        String systemPrompt = """
-            당신은 비디오 콘텐츠 구성 전문가입니다. 프로젝트 정보를 바탕으로 반드시 2~5개의 씬(장면)만 생성해주세요.
-            
-            중요: 씬은 반드시 2개 이상 5개 이하로만 생성해주세요. 1개 또는 6개 이상은 절대 안 됩니다.
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "scenes": [
+              "plans": [
                 {
-                  "sceneOrder": 1,
-                  "summary": "씬 요약",
-                  "optionalElements": {
-                    "action": "행동",
-                    "mood": "분위기",
-                    "camera": "카메라 각도"
-                  },
-                  "imagePrompt": "이미지 생성 프롬프트",
-                  "videoPrompt": "비디오 생성 프롬프트"
+                  "planId": 1,
+                  "title": "제품 중심 기획안",
+                  "focus": "제품 중심",
+                  "displayText": "제품의 혁신적인 디자인과 기술적 우수성을 강조하는 세련된 테크 기획안입니다. 제품의 아름다움과 성능을 시각적으로 극대화하여 브랜드의 기술력을 보여줍니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 캐릭터",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "화면 비율",
+                    "purpose": "목적"
+                  }
+                },
+                {
+                  "planId": 2,
+                  "title": "감성 중심 기획안",
+                  "focus": "감성 중심",
+                  "displayText": "사용자의 감성적 경험과 라이프스타일 변화를 그리는 감동적인 스토리텔링 기획안입니다. 제품이 가져다줄 따뜻한 순간들과 감동을 중심으로 잠재고객의 마음을 움직입니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 캐릭터",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "화면 비율",
+                    "purpose": "목적"
+                  }
+                },
+                {
+                  "planId": 3,
+                  "title": "기능 시연 중심 기획안",
+                  "focus": "기능 시연 중심",
+                  "displayText": "실제 사용 방법과 다양한 활용 장면을 구체적으로 보여주는 실용적인 기획안입니다. 문제 해결과 편의성을 강조하며 제품의 신뢰성과 실용성을 입증합니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 캐릭터",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "화면 비율",
+                    "purpose": "목적"
+                  }
                 }
               ]
             }
             """;
         
         String fullUserPrompt = String.format("""
-            다음 프로젝트 정보를 바탕으로 반드시 2~5개의 씬(장면)만 생성해주세요:
+            다음 사용자 요청을 바탕으로 위에서 명시한 A/B/C 3가지 다른 스타일의 비디오 기획안을 구체적으로 생성해주세요:
+            
+            사용자 요청: %s
+            
+            중요:
+            - A안은 제품의 디자인, 기능, 기술적 특징을 세련되게 강조
+            - B안은 사용자의 감성, 라이프스타일, 감동적인 변화에 초점
+            - C안은 실제 사용법, 문제 해결, 활용 사례를 구체적으로 보여줌
+            
+            각 기획안은 서로 다른 장면 흐름, 메시지, 톤앤매너가 드러나도록 창의적이고 구체적으로 작성해주세요.
+            """, userPrompt);
+        
+        try {
+            String response = callOpenAI(systemPrompt, fullUserPrompt);
+            log.info("OpenAI plan generation success: {}", response);
+            return response;
+        } catch (Exception e) {
+            log.warn("OpenAI plan generation failed, using fallback: {}", e.getMessage());
+            return createFallbackPlan(userPrompt);
+        }
+    }
+    
+    private String createFallbackPlan(String userPrompt) {
+        return String.format("""
+            {
+              "plans": [
+                {
+                  "planId": 1,
+                  "title": "제품 중심 기획안",
+                  "focus": "제품 중심",
+                  "displayText": "%s를 기반으로 제품의 혁신적인 디자인과 기술적 우수성을 강조하는 세련된 테크 기획안입니다. 제품의 아름다움과 성능을 시각적으로 극대화하여 브랜드의 기술력을 보여줍니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 인물",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "16:9",
+                    "purpose": "프로모션"
+                  }
+                },
+                {
+                  "planId": 2,
+                  "title": "감성 중심 기획안",
+                  "focus": "감성 중심",
+                  "displayText": "%s를 기반으로 사용자의 감성적 경험과 라이프스타일 변화를 그리는 감동적인 스토리텔링 기획안입니다. 제품이 가져다줄 따뜻한 순간들과 감동을 중심으로 잠재고객의 마음을 움직입니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 인물",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "16:9",
+                    "purpose": "프로모션"
+                  }
+                },
+                {
+                  "planId": 3,
+                  "title": "기능 시연 중심 기획안",
+                  "focus": "기능 시연 중심",
+                  "displayText": "%s를 기반으로 실제 사용 방법과 다양한 활용 장면을 구체적으로 보여주는 실용적인 기획안입니다. 문제 해결과 편의성을 강조하며 제품의 신뢰성과 실용성을 입증합니다.",
+                  "coreElements": {
+                    "mainCharacter": "주요 인물",
+                    "background": "배경 설정",
+                    "style": "스타일",
+                    "ratio": "16:9",
+                    "purpose": "프로모션"
+                  }
+                }
+              ]
+            }
+            """, userPrompt, userPrompt, userPrompt);
+    }
+    
+    /**
+     * Scene 생성을 위한 OpenAI 호출 (summary만 생성)
+     */
+    public String generateScenesFromProject(String projectTitle, String coreElements, String sceneGenerationRequest) {
+        String systemPrompt = """
+            당신은 전문 비디오 광고 콘티 작가입니다. 프로젝트 정보를 바탕으로 반드시 2~5개의 구체적인 씬(장면)만 생성해주세요.
+            
+            중요: 씬은 반드시 2개 이상 5개 이하로만 생성해주세요. 1개 또는 6개 이상은 절대 안 됩니다.
+            
+            각 씬은 구체적이고 시각적인 장면 설명으로 작성해주세요:
+            
+            - summary: "첫 번째 장면" 같은 일반적 설명 금지
+                      "어두운 배경 위 갤럭시탭 실루엣이 천천히 드러나는 오프닝 장면"처럼 구체적이어야 함
+            - title: 장면의 제목 (선택사항)
+            - order: 장면 순서 (1부터 시작)
+            
+            중요: 아래 필드는 생성하지 마세요 (Scene 설계 단계에서 생성됨)
+            - optionalElements (생성 금지)
+            - imagePrompt (생성 금지)  
+            - videoPrompt (생성 금지)
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "scenes": [
+                {
+                  "sceneOrder": 1,
+                  "title": "제품 실루엣 등장",
+                  "summary": "어두운 배경 위에서 갤럭시탭 실루엣이 천천히 드러난다."
+                },
+                {
+                  "sceneOrder": 2,
+                  "title": "디자인 클로즈업", 
+                  "summary": "얇은 측면과 메탈 프레임을 강조하는 클로즈업 장면이 이어진다."
+                }
+              ]
+            }
+            """;
+        
+        String fullUserPrompt = String.format("""
+            다음 프로젝트 정보를 바탕으로 구체적인 씬 요약만 2~5개 생성해주세요:
             
             프로젝트 제목: %s
-            핵심 요소: %s
+            기획 정보: %s
             씬 생성 요청: %s
             
-            중요: 반드시 2개 이상 5개 이하의 씬만 생성해주세요.
+            중요:
+            - 각 씬의 summary는 구체적이고 시각적인 장면 설명으로 작성
+            - optionalElements, imagePrompt, videoPrompt는 생성하지 말 것
+            - 반드시 2개 이상 5개 이하의 씬만 생성해주세요
             """, projectTitle, coreElements, sceneGenerationRequest);
         
         return callOpenAI(systemPrompt, fullUserPrompt);
     }
     
     /**
-     * Scene 설계를 위한 OpenAI 호출
+     * Scene 설계를 위한 OpenAI 호출 (optionalElements + prompt 생성)
      */
     public String designScene(String sceneSummary, String designRequest) {
         String systemPrompt = """
-            당신은 비디오 씬 설계 전문가입니다. 기존 씬 정보와 사용자 요청을 바탕으로 씬을 재설계해주세요.
+            당신은 비디오 씬 설계 전문가입니다. 기존 씬 정보와 사용자 요청을 바탕으로 씬을 구체적으로 설계해주세요.
+            
+            다음 요소들을 구체적으로 생성해주세요:
+            
+            - optionalElements: 씬의 상세 설계 요소
+              * action: 인물/제품의 구체적인 행동
+              * pose: 인물의 자세나 제품 각도
+              * camera: 촬영 각도, 움직임, 렌즈 종류
+              * cameraMotion: 카메라 움직임 (패닝, 틸트, 달리, 크랩 등)
+              * lighting: 조명 상태와 분위기
+              * mood: 장면의 감정적 톤
+              * timeOfDay: 시간대와 분위기
+              * motion: 움직임의 종류와 속도
+              * effects: 특수 효과나 후처리
+              
+            - imagePrompt: 씬 설계를 바탕으로 한 상세 이미지 생성 프롬프트
+            - videoPrompt: 씬 설계를 바탕으로 한 상세 영상 생성 프롬프트
             
             반드시 JSON 형식으로 응답해주세요:
             {
               "optionalElements": {
-                "action": "행동",
-                "mood": "분위기",
-                "camera": "카메라 각도",
-                "lighting": "조명"
+                "action": "손가락으로 탭을 스와이프하며 화면이 밝아짐",
+                "pose": "45도 각도에서 제품을 들고 있는 자세",
+                "camera": "로우 앵글에서 시작하여 탭의 디테일을 보여주는 클로즈업",
+                "cameraMotion": "부드러운 패닝으로 탭의 측면을 따라 움직임",
+                "lighting": "백라이트로 제품 실루엣 강조, 점차 밝아지는 조명",
+                "mood": "신비롭고 고급스러운 분위기",
+                "timeOfDay": "실내, 인공 조명 환경",
+                "motion": "천천히, 부드럽게",
+                "effects": "미세한 렌즈 플레어 효과"
               },
-              "imagePrompt": "이미지 생성 프롬프트",
-              "videoPrompt": "비디오 생성 프롬프트"
+              "imagePrompt": "어두운 배경에서 갤럭시탭 실루엣이 드러나는 고급스러운 제품 사진, 백라이트 효과, 미니멀리즘, 프리미엄 태블릿 디자인, 손가락 스와이프",
+              "videoPrompt": "어두운 배경에서 갤럭시탭이 천천히 드러나는 오프닝 시퀀스, 손가락 스와이프, 부드러운 카메라 움직임, 신비로운 분위기, 4K 고화질"
             }
             """;
         
         String fullUserPrompt = String.format("""
-            다음 정보를 바탕으로 씬을 설계해주세요:
+            다음 정보를 바탕으로 씬을 구체적으로 설계해주세요:
             
             기존 씬 요약: %s
             설계 요청: %s
             
-            위 요청에 맞게 씬을 재설계해주세요.
+            중요:
+            - optionalElements의 모든 필드를 최대한 구체적으로 채울 것
+            - imagePrompt와 videoPrompt는 씬 설계를 반영한 상세 프롬프트로 작성
+            - 실제 촬영 가능한 구체적인 내용으로 작성
             """, sceneSummary, designRequest);
         
         return callOpenAI(systemPrompt, fullUserPrompt);

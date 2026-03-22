@@ -27,12 +27,39 @@ import java.util.Optional;
 public class PlanningService {
     
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PlanningService.class);
-
-    private final ProjectPlanRepository planRepository;
+    
+    private final ProjectPlanRepository projectPlanRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
-    private final OpenAIService openAIService;
     private final ObjectMapper objectMapper;
+    private final OpenAIService openAIService;
+    
+    /**
+     * 사용자가 선택한 기획안을 프로젝트의 최종 선택 기획안으로 저장
+     */
+    public void selectPlan(Long projectId, Integer selectedPlanId) {
+        log.info("=== Plan Selection Started ===");
+        log.info("Project ID: {}", projectId);
+        log.info("Selected Plan ID: {}", selectedPlanId);
+        
+        // 최신 기획안 조회
+        Optional<ProjectPlan> latestPlan = getLatestPlan(projectId);
+        if (latestPlan.isEmpty()) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+        
+        ProjectPlan plan = latestPlan.get();
+        log.info("Found latest plan: {}", plan.getId());
+        
+        // 선택된 기획안 유효성 확인 (1/2/3)
+        if (selectedPlanId < 1 || selectedPlanId > 3) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+        
+        // TODO: Project 엔티티에 selectedPlanId 필드 추가 필요
+        // 현재는 로그만 남기고 실제 저장은 추후 구현
+        log.info("Plan selection completed - Project: {}, SelectedPlan: {}", projectId, selectedPlanId);
+    }
 
     public ProjectPlan createPlan(String loginId, Long projectId, PlanCreateRequest request) {
         // 프로젝트 존재 확인
@@ -44,8 +71,8 @@ public class PlanningService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
         }
 
-        // 버전 계산
-        int nextVersion = planRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+        // 프로젝트 버전 계산
+        int nextVersion = projectPlanRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
                 .stream()
                 .mapToInt(ProjectPlan::getVersion)
                 .max()
@@ -61,36 +88,19 @@ public class PlanningService {
             
             // JSON 추출
             String json = JsonUtils.extractJsonSafely(aiResponse);
-            log.info("추출된 JSON: {}", json);
+            log.info("=== Saving Plan Data ===");
+            log.info("Extracted JSON: {}", json);
             
-            // JSON 파싱
-            PlanGenerationResponse planResponse = objectMapper.readValue(json, PlanGenerationResponse.class);
-            log.info("기획 파싱 완료 - 제목: {}", planResponse.getTitle());
-            
-            // ProjectPlanResponse로 변환
-            ProjectPlanResponse response = ProjectPlanResponse.builder()
-                    .title(planResponse.getTitle())
-                    .theme(planResponse.getCoreElements().getBackground())
-                    .mainCharacter(planResponse.getCoreElements().getMainCharacter())
-                    .background(planResponse.getCoreElements().getBackground())
-                    .timeOfDay("전체")
-                    .mood(planResponse.getCoreElements().getMood())
-                    .style(planResponse.getCoreElements().getStyle())
-                    .scenes(List.of()) // 기획 단계에서는 씬 목록 비워둠
-                    .build();
-            
-            log.info("기획 생성 완료 - 제목: {}", response.getTitle());
-            
-            // 기획 저장
+            // 기획 저장 (OpenAI 응답을 그대로 저장)
             ProjectPlan plan = ProjectPlan.builder()
                     .project(project)
                     .version(nextVersion)
-                    .planData(response.toJson())
+                    .planData(json)  // OpenAI 응답 JSON을 그대로 저장
                     .userPrompt(request.getUserPrompt())
                     .status(ProjectPlan.PlanStatus.DRAFT)
                     .build();
 
-            ProjectPlan savedPlan = planRepository.save(plan);
+            ProjectPlan savedPlan = projectPlanRepository.save(plan);
             
             // 프로젝트 상태 업데이트
             project.setStatus(ProjectStatus.PLANNING);
@@ -104,32 +114,21 @@ public class PlanningService {
         } catch (Exception e) {
             log.error("기획 생성 실패 - fallback 실행", e);
             
-            // fallback: userPrompt 기반 간단 생성
-            ProjectPlanResponse response = ProjectPlanResponse.builder()
-                    .title(request.getUserPrompt().length() > 50 ? 
-                            request.getUserPrompt().substring(0, 47) + "..." : 
-                            request.getUserPrompt())
-                    .theme("기본 테마")
-                    .mainCharacter("주인공")
-                    .background("일반적인 배경")
-                    .timeOfDay("전체")
-                    .mood("중립")
-                    .style("표준")
-                    .scenes(List.of()) // 기획 단계에서는 씬 목록 비워둠
-                    .build();
-            
-            log.info("Fallback 기획 생성 완료 - 제목: {}", response.getTitle());
+            // fallback: userPrompt 기반 3개 기획안 생성
+            String fallbackJson = createFallbackPlanJson(request.getUserPrompt());
+            log.info("=== Using Fallback Plan Data ===");
+            log.info("Fallback JSON: {}", fallbackJson);
             
             // 기획 저장
             ProjectPlan plan = ProjectPlan.builder()
                     .project(project)
                     .version(nextVersion)
-                    .planData(response.toJson())
+                    .planData(fallbackJson)  // fallback JSON 저장
                     .userPrompt(request.getUserPrompt())
                     .status(ProjectPlan.PlanStatus.DRAFT)
                     .build();
 
-            ProjectPlan savedPlan = planRepository.save(plan);
+            ProjectPlan savedPlan = projectPlanRepository.save(plan);
             
             // 프로젝트 상태 업데이트
             project.setStatus(ProjectStatus.PLANNING);
@@ -141,12 +140,46 @@ public class PlanningService {
             return savedPlan;
         }
     }
+    
+    private String createFallbackPlanJson(String userPrompt) {
+        return String.format("""
+            {
+              "displayText": "입력한 아이디어를 바탕으로 3가지 기획안을 제안합니다.",
+              "coreElements": {
+                "mainCharacter": "주요 인물",
+                "background": "배경 설정",
+                "style": "스타일",
+                "ratio": "16:9",
+                "purpose": "프로모션"
+              },
+              "meta": {
+                "storyOptions": [
+                  {
+                    "id": "A",
+                    "title": "기획안 A",
+                    "description": "%s를 기반으로 한 제품 중심의 기획안입니다. 제품의 특징과 장점을 효과적으로 보여줍니다."
+                  },
+                  {
+                    "id": "B",
+                    "title": "기획안 B", 
+                    "description": "%s를 기반으로 한 감성 중심의 기획안입니다. 감동적인 스토리와 감성적인 장면을 강조합니다."
+                  },
+                  {
+                    "id": "C",
+                    "title": "기획안 C",
+                    "description": "%s를 기반으로 한 기능 시연 중심의 기획안입니다. 실제 사용 방법과 기능을 명확하게 보여줍니다."
+                  }
+                ]
+              }
+            }
+            """, userPrompt, userPrompt, userPrompt);
+    }
 
     public Optional<ProjectPlan> getLatestPlan(Long projectId) {
-        return planRepository.findFirstByProjectIdOrderByCreatedAtDesc(projectId);
+        return projectPlanRepository.findFirstByProjectIdOrderByCreatedAtDesc(projectId);
     }
 
     public List<ProjectPlan> getPlanHistory(Long projectId) {
-        return planRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        return projectPlanRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
     }
 }

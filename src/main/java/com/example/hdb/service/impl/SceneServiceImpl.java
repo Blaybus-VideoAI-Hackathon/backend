@@ -10,7 +10,9 @@ import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.dto.common.OptionalElements;
 import com.example.hdb.dto.openai.SceneGenerationResponse;
+import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.entity.Project;
+import com.example.hdb.entity.ProjectPlan;
 import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.SceneImage;
 import com.example.hdb.entity.SceneVideo;
@@ -22,6 +24,7 @@ import com.example.hdb.repository.SceneImageRepository;
 import com.example.hdb.repository.SceneVideoRepository;
 import com.example.hdb.service.SceneService;
 import com.example.hdb.service.OpenAIService;
+import com.example.hdb.service.PlanningService;
 import com.example.hdb.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +49,7 @@ public class SceneServiceImpl implements SceneService {
     private final OpenAIService openAIService;
     private final SceneImageRepository sceneImageRepository;
     private final SceneVideoRepository sceneVideoRepository;
+    private final PlanningService planningService;
     
     @Override
     public SceneResponse createScene(SceneCreateRequest request) {
@@ -140,12 +144,17 @@ public class SceneServiceImpl implements SceneService {
     // ========== 신규 메서드 (Scene 기능 확장) ==========
     
     @Override
-    public List<SceneResponse> generateScenes(Long projectId, String sceneGenerationRequest) {
-        log.info("Generating scenes for projectId: {}, request: {}", projectId, sceneGenerationRequest);
+    public List<SceneResponse> generateScenes(Long projectId, String selectedPlanId, String sceneGenerationRequest) {
+        log.info("=== Scene Generation Started ===");
+        log.info("Project ID: {}", projectId);
+        log.info("Selected Plan ID: {}", selectedPlanId);
+        log.info("Scene Generation Request: {}", sceneGenerationRequest);
         
         // 프로젝트 존재 확인
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        log.info("Project found - Title: {}, CoreElements: {}", project.getTitle(), project.getCoreElements());
         
         // 중복 생성 방지: 기존 scene이 있으면 삭제 후 재생성
         List<Scene> existingScenes = sceneRepository.findByProjectId(projectId);
@@ -155,13 +164,19 @@ public class SceneServiceImpl implements SceneService {
         }
         
         try {
+            // 기획 정보 추출 (선택된 기획안 반영)
+            String coreElements = extractCoreElementsForSceneGeneration(project, selectedPlanId);
+            log.info("=== Scene Generation Plan Info ===");
+            log.info("Selected Plan ID: {}", selectedPlanId);
+            log.info("Extracted coreElements for scene generation: {}", coreElements);
+            
             // OpenAI로 씬 생성
             log.info("OpenAI 호출 - projectTitle: {}, coreElements: {}, request: {}", 
-                    project.getTitle(), project.getCoreElements(), sceneGenerationRequest);
+                    project.getTitle(), coreElements, sceneGenerationRequest);
             
             String aiResponse = openAIService.generateScenesFromProject(
                     project.getTitle(), 
-                    project.getCoreElements(), 
+                    coreElements, 
                     sceneGenerationRequest
             );
             log.info("OpenAI 씬 생성 응답 수신: {}", aiResponse);
@@ -187,15 +202,12 @@ public class SceneServiceImpl implements SceneService {
             
             log.info("최종 씬 수: {}", scenes.size());
             
-            // Scene 엔티티로 변환
+            // Scene 엔티티로 변환 (summary만 저장)
             List<Scene> generatedScenes = scenes.stream()
                     .map(sceneData -> Scene.builder()
                             .project(project)
                             .sceneOrder(sceneData.getSceneOrder())
                             .summary(sceneData.getSummary())
-                            .optionalElements(createOptionalElementsJson(sceneData.getOptionalElements()))
-                            .imagePrompt(sceneData.getImagePrompt())
-                            .videoPrompt(sceneData.getVideoPrompt())
                             .status(com.example.hdb.enums.SceneStatus.PENDING)
                             .build())
                     .collect(Collectors.toList());
@@ -685,6 +697,132 @@ public class SceneServiceImpl implements SceneService {
         } catch (Exception e) {
             log.error("Failed to parse optionalElements JSON: {}", json, e);
             return OptionalElements.builder().build();
+        }
+    }
+    
+    /**
+     * 프로젝트 기획 정보에서 씬 생성을 위한 coreElements 추출
+     * 새로운 A/B/C 3개 기획안 구조를 고려하여 기획 정보 추출
+     */
+    private String extractCoreElementsForSceneGeneration(Project project) {
+        try {
+            log.info("=== Extracting Core Elements for Scene Generation ===");
+            
+            // 1. 최신 기획안 조회
+            Optional<ProjectPlan> latestPlan = planningService.getLatestPlan(project.getId());
+            if (latestPlan.isPresent()) {
+                ProjectPlan plan = latestPlan.get();
+                String planData = plan.getPlanData();
+                log.info("Found latest plan - Plan ID: {}, Plan Data: {}", plan.getId(), planData);
+                
+                // 2. JSON 파싱하여 A/B/C 기획안 추출
+                ProjectPlanResponse planResponse = ProjectPlanResponse.fromJson(planData);
+                if (planResponse != null && planResponse.getMeta() != null && 
+                    planResponse.getMeta().getStoryOptions() != null && 
+                    !planResponse.getMeta().getStoryOptions().isEmpty()) {
+                    
+                    // 3. A기획안 기본 사용 (storyOptions[0])
+                    ProjectPlanResponse.StoryOption selectedOption = planResponse.getMeta().getStoryOptions().get(0);
+                    String selectedPlanId = selectedOption.getId();
+                    String selectedTitle = selectedOption.getTitle();
+                    String selectedDescription = selectedOption.getDescription();
+                    
+                    // 4. 선택된 기획안 + coreElements 조합
+                    String combinedCoreElements = String.format(
+                        "%s기획안: %s / %s / %s", 
+                        selectedPlanId,
+                        selectedTitle,
+                        selectedDescription,
+                        planResponse.getCoreElements() != null ? 
+                            String.format("Core: %s", planResponse.getCoreElements().getMainCharacter()) : ""
+                    );
+                    
+                    log.info("Using selected plan - ID: {}, Title: {}, Description: {}", 
+                            selectedPlanId, selectedTitle, selectedDescription);
+                    log.info("Combined coreElements: {}", combinedCoreElements);
+                    
+                    return combinedCoreElements;
+                }
+            }
+            
+            log.info("No valid plan found, using fallback");
+            
+            // 5. fallback: 프로젝트의 coreElements 필드 확인 (기존 방식)
+            String projectCoreElements = project.getCoreElements();
+            if (projectCoreElements != null && !projectCoreElements.trim().isEmpty()) {
+                log.info("Using project.coreElements: {}", projectCoreElements);
+                return projectCoreElements;
+            }
+            
+            // 6. 최종 fallback: 프로젝트 정보 기반 기본 coreElements 생성
+            String fallbackCoreElements = String.format(
+                "프로젝트 제목: %s, 목적: 비디오 콘텐츠 제작", 
+                project.getTitle() != null ? project.getTitle() : "제목 없음"
+            );
+            
+            log.info("Using final fallback coreElements: {}", fallbackCoreElements);
+            return fallbackCoreElements;
+            
+        } catch (Exception e) {
+            log.error("Error extracting coreElements, using ultimate fallback", e);
+            return String.format("프로젝트: %s", project.getTitle());
+        }
+    }
+    
+    /**
+     * 특정 기획안 ID(A/B/C)를 기반으로 coreElements 추출
+     * 추후 프론트에서 선택 기능 구현 시 사용
+     */
+    private String extractCoreElementsForSceneGeneration(Project project, String selectedPlanId) {
+        try {
+            log.info("=== Extracting Core Elements for Selected Plan: {} ===", selectedPlanId);
+            
+            // 최신 기획안 조회
+            Optional<ProjectPlan> latestPlan = planningService.getLatestPlan(project.getId());
+            if (latestPlan.isPresent()) {
+                ProjectPlan plan = latestPlan.get();
+                String planData = plan.getPlanData();
+                log.info("Found latest plan - Plan ID: {}", plan.getId());
+                
+                // JSON 파싱하여 A/B/C 기획안 추출
+                ProjectPlanResponse planResponse = ProjectPlanResponse.fromJson(planData);
+                if (planResponse != null && planResponse.getMeta() != null && 
+                    planResponse.getMeta().getStoryOptions() != null && 
+                    !planResponse.getMeta().getStoryOptions().isEmpty()) {
+                    
+                    // 선택된 기획안 찾기
+                    ProjectPlanResponse.StoryOption selectedOption = planResponse.getMeta().getStoryOptions().stream()
+                            .filter(option -> selectedPlanId.equals(option.getId()))
+                            .findFirst()
+                            .orElse(planResponse.getMeta().getStoryOptions().get(0)); // fallback to A
+                    
+                    String selectedTitle = selectedOption.getTitle();
+                    String selectedDescription = selectedOption.getDescription();
+                    
+                    // 선택된 기획안 + coreElements 조합
+                    String combinedCoreElements = String.format(
+                        "%s기획안: %s / %s / %s", 
+                        selectedOption.getId(),
+                        selectedTitle,
+                        selectedDescription,
+                        planResponse.getCoreElements() != null ? 
+                            String.format("Core: %s", planResponse.getCoreElements().getMainCharacter()) : ""
+                    );
+                    
+                    log.info("Using selected plan - ID: {}, Title: {}, Description: {}", 
+                            selectedOption.getId(), selectedTitle, selectedDescription);
+                    log.info("Combined coreElements: {}", combinedCoreElements);
+                    
+                    return combinedCoreElements;
+                }
+            }
+            
+            log.info("No valid plan found for selected ID: {}, using fallback", selectedPlanId);
+            return extractCoreElementsForSceneGeneration(project);
+            
+        } catch (Exception e) {
+            log.error("Error extracting coreElements for selected plan: {}, using fallback", selectedPlanId, e);
+            return extractCoreElementsForSceneGeneration(project);
         }
     }
 }

@@ -21,4 +21,5 @@ public class SceneImageResponse {
     private String statusDescription;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Boolean fallbackUsed; // fallback 사용 여부
 }

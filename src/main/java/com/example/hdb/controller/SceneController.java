@@ -88,15 +88,31 @@ public class SceneController extends BaseController {
             @io.swagger.v3.oas.annotations.parameters.RequestBody(required = false) @Valid SceneGenerateRequest request,
             Authentication authentication) {
         
-        log.info("Generating scenes for projectId: {}, request: {}", projectId, request.getSceneGenerationRequest());
+        log.info("=== Scene Generation Started ===");
+        log.info("Project ID: {}", projectId);
+        log.info("Request object: {}", request);
+        log.info("Request null: {}", request == null);
         
         // sceneGenerationRequest가 null 또는 empty일 경우 기본값 처리
-        String sceneGenerationRequest = request.getSceneGenerationRequest();
-        if (sceneGenerationRequest == null || sceneGenerationRequest.trim().isEmpty()) {
+        String sceneGenerationRequest;
+        if (request == null || request.getSceneGenerationRequest() == null || request.getSceneGenerationRequest().trim().isEmpty()) {
             sceneGenerationRequest = "프로젝트 기획을 기반으로 씬을 생성해주세요";
+            log.info("Using default sceneGenerationRequest: {}", sceneGenerationRequest);
+        } else {
+            sceneGenerationRequest = request.getSceneGenerationRequest();
+            log.info("Using provided sceneGenerationRequest: {}", sceneGenerationRequest);
         }
         
-        List<SceneResponse> scenes = sceneService.generateScenes(projectId, sceneGenerationRequest);
+        // selectedPlanId 처리
+        String selectedPlanId = null;
+        if (request != null && request.getSelectedPlanId() != null && !request.getSelectedPlanId().trim().isEmpty()) {
+            selectedPlanId = request.getSelectedPlanId();
+            log.info("Using provided selectedPlanId: {}", selectedPlanId);
+        } else {
+            log.info("No selectedPlanId provided, will use default (A)");
+        }
+        
+        List<SceneResponse> scenes = sceneService.generateScenes(projectId, selectedPlanId, sceneGenerationRequest);
         
         return ResponseEntity.ok(ApiResponse.success("씬 자동 생성 성공", scenes));
     }
