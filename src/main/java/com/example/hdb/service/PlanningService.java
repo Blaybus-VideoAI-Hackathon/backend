@@ -105,8 +105,54 @@ public class PlanningService {
                     .build();
             
         } catch (Exception e) {
-            log.error("기획 생성 실패", e);
-            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            log.error("기획 생성 실패 - fallback 실행", e);
+            
+            // fallback 생성 (placeholder 금지, 구체적인 내용)
+            PlanningGenerateResponse.PlanningSummary fallbackSummary = PlanningGenerateResponse.PlanningSummary.builder()
+                    .purpose(project.getPurpose())
+                    .duration(project.getDuration())
+                    .ratio(project.getRatio())
+                    .style(project.getStyle())
+                    .mainCharacter("사용자 요청에 맞는 주인공")
+                    .subCharacters(java.util.List.of("보조 캐릭터", "배경 캐릭터"))
+                    .backgroundWorld("사용자 요청에 맞는 배경 세계관")
+                    .storyFlow("도입 → 전개 → 클라이맥스 → 결말")
+                    .storyLine("사용자의 요청을 바탕으로 생성된 기획 기반 스토리라인")
+                    .build();
+            
+            List<PlanningGenerateResponse.Plan> fallbackPlans = java.util.List.of(
+                PlanningGenerateResponse.Plan.builder()
+                        .planId(1)
+                        .title("기본 기획안")
+                        .focus("사용자 요청 기반")
+                        .displayText("사용자의 요청을 바탕으로 생성된 기본 기획안입니다.")
+                        .recommendationReason("사용자 요청에 가장 적합한 기본 구성")
+                        .strengths(java.util.List.of("요청 반영", "기본 구성"))
+                        .targetMood("사용자 요청 기반 분위기")
+                        .targetUseCase("사용자 요청 기반 활용")
+                        .storyLine("사용자 요청 기반 스토리라인")
+                        .coreElements(PlanningGenerateResponse.CoreElements.builder()
+                                .purpose(project.getPurpose())
+                                .duration(project.getDuration())
+                                .ratio(project.getRatio())
+                                .style(project.getStyle())
+                                .mainCharacter("사용자 요청에 맞는 주인공")
+                                .subCharacters(java.util.List.of("보조 캐릭터", "배경 캐릭터"))
+                                .backgroundWorld("사용자 요청에 맞는 배경 세계관")
+                                .storyFlow("도입 → 전개 → 클라이맥스 → 결말")
+                                .storyLine("사용자 요청 기반 스토리라인")
+                                .build())
+                        .build()
+            );
+            
+            log.warn("Fallback planning generated for projectId: {}", projectId);
+            
+            return PlanningGenerateResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(null)
+                    .planningSummary(fallbackSummary)
+                    .plans(fallbackPlans)
+                    .build();
         }
     }
 

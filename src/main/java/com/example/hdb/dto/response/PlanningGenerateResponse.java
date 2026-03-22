@@ -98,6 +98,7 @@ public class PlanningGenerateResponse {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @Builder
     public static class CoreElements {
         
         @Schema(description = "영상 목적")
