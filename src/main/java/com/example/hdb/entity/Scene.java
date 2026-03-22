@@ -52,10 +52,10 @@ public class Scene extends BaseTimeEntity {
     private SceneStatus status;
     
     // 이미지 관계 추가
-    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<SceneImage> images;
     
     // 영상 관계 추가
-    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "scene", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<SceneVideo> videos;
 }

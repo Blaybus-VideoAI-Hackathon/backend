@@ -49,7 +49,7 @@ public class Project extends BaseTimeEntity {
     @Column(nullable = false)
     private PlanningStatus planningStatus;
     
-    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Scene> scenes;
     
     // 기획/생성 상태를 위한 새로운 필드

@@ -156,4 +156,23 @@ public class ProjectServiceImpl implements ProjectService {
         
         return ApiResponse.success("프로젝트 씬 생성 성공", response);
     }
+    
+    @Override
+    public void deleteProject(Long projectId, String loginId) {
+        log.info("Deleting project: projectId={}, loginId={}", projectId, loginId);
+        
+        // 프로젝트 조회
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        // 권한 체크
+        if (!project.getUser().getLoginId().equals(loginId)) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        
+        // cascade로 연관 데이터 자동 삭제 (scenes, scene_images, scene_videos)
+        projectRepository.delete(project);
+        
+        log.info("Project deleted successfully: projectId={}, title='{}'", projectId, project.getTitle());
+    }
 }

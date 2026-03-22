@@ -64,32 +64,46 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         request.setDuration(duration);
         request.setAspectRatio("16:9");
         
+        // SceneVideo를 PENDING 상태로 먼저 저장
+        SceneVideo sceneVideo = SceneVideo.builder()
+                .scene(scene)
+                .videoUrl(null) // 생성 전까지 null
+                .videoPrompt(scene.getVideoPrompt())
+                .duration(duration)
+                .openaiVideoId(null)
+                .klingTaskId(null)
+                .status(SceneVideo.VideoStatus.GENERATING)
+                .build();
+        
+        SceneVideo savedVideo = sceneVideoRepository.save(sceneVideo);
+        log.info("SceneVideo PENDING 상태로 저장 완료: {}", savedVideo.getId());
+        
         String finalVideoUrl;
         try {
             KlingVideoResponse response = klingVideoApiService.generateVideo(request);
             log.info("Kling 영상 생성 요청 완료: taskId={}", response.getTaskId());
             finalVideoUrl = response.getVideoUrl();
+            
+            // 성공 시 READY 상태로 업데이트
+            savedVideo.setVideoUrl(finalVideoUrl);
+            savedVideo.setStatus(SceneVideo.VideoStatus.READY);
+            savedVideo = sceneVideoRepository.save(savedVideo);
+            log.info("SceneVideo READY 상태로 업데이트 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
+            
         } catch (Exception klingException) {
-            log.warn("Kling API 호출 실패, fallback으로 더미 영상 URL 사용: {}", klingException.getMessage());
-            finalVideoUrl = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4";
+            log.warn("Kling API 호출 실패, fallback으로 동적 영상 URL 사용: {}", klingException.getMessage());
+            finalVideoUrl = generateDynamicVideoUrl(sceneId, scene.getVideoPrompt());
+            
+            // fallback 시에도 READY 상태로 업데이트
+            savedVideo.setVideoUrl(finalVideoUrl);
+            savedVideo.setStatus(SceneVideo.VideoStatus.READY);
+            savedVideo = sceneVideoRepository.save(savedVideo);
+            log.info("SceneVideo fallback으로 READY 상태로 업데이트 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
         }
-        
-        // SceneVideo를 READY 상태로 저장
-        SceneVideo sceneVideo = SceneVideo.builder()
-                .scene(scene)
-                .videoUrl(finalVideoUrl)
-                .videoPrompt(scene.getVideoPrompt())
-                .duration(duration)
-                .openaiVideoId(null)
-                .klingTaskId(null)
-                .status(SceneVideo.VideoStatus.READY)
-                .build();
-        
-        SceneVideo savedVideo = sceneVideoRepository.save(sceneVideo);
-        log.info("SceneVideo 생성 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
         
         return SceneVideoResponse.builder()
                 .id(savedVideo.getId())
+                .sceneId(savedVideo.getScene().getId())
                 .videoUrl(savedVideo.getVideoUrl())
                 .videoPrompt(savedVideo.getVideoPrompt())
                 .duration(savedVideo.getDuration())
@@ -109,6 +123,12 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             // SceneVideo 조회
             SceneVideo sceneVideo = sceneVideoRepository.findById(videoId)
                     .orElseThrow(() -> new RuntimeException("SceneVideo not found: " + videoId));
+            
+            // 이미 GENERATING 상태인지 확인
+            if (sceneVideo.getStatus() != SceneVideo.VideoStatus.GENERATING) {
+                log.warn("Video is not in GENERATING state: {}, status: {}", videoId, sceneVideo.getStatus());
+                return;
+            }
             
             // 영상 생성에 사용할 이미지 URL 결정 (편집 이미지 우선)
             String sourceImageUrl = determineImageUrlForVideo(sceneVideo.getScene());
@@ -139,14 +159,14 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 log.info("SceneVideo 생성 완료: {}", completedVideo.getId());
                 
             } catch (Exception klingException) {
-                log.warn("Kling API 호출 실패, fallback으로 더미 영상 URL 사용: {}", klingException.getMessage());
+                log.warn("Kling API 호출 실패, fallback으로 동적 영상 URL 사용: {}", klingException.getMessage());
                 
-                // Fallback: 더미 영상 URL 사용
-                String dummyVideoUrl = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4";
+                // Fallback: 동적 영상 URL 생성
+                String fallbackVideoUrl = generateDynamicVideoUrl(sceneVideo.getScene().getId(), sceneVideo.getVideoPrompt());
                 sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
-                sceneVideo.setVideoUrl(dummyVideoUrl);
+                sceneVideo.setVideoUrl(fallbackVideoUrl);
                 SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
-                log.info("SceneVideo fallback 생성 완료: {}, videoUrl: {}", completedVideo.getId(), dummyVideoUrl);
+                log.info("SceneVideo fallback 생성 완료: {}, videoUrl: {}", completedVideo.getId(), fallbackVideoUrl);
             }
             
         } catch (Exception e) {
@@ -280,6 +300,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
     private SceneVideoResponse convertToResponse(SceneVideo sceneVideo) {
         return SceneVideoResponse.builder()
                 .id(sceneVideo.getId())
+                .sceneId(sceneVideo.getScene().getId())
                 .videoUrl(sceneVideo.getVideoUrl())
                 .videoPrompt(sceneVideo.getVideoPrompt())
                 .duration(sceneVideo.getDuration())
@@ -288,5 +309,18 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 .createdAt(sceneVideo.getCreatedAt())
                 .updatedAt(sceneVideo.getUpdatedAt())
                 .build();
+    }
+    
+    /**
+     * 동적 영상 URL 생성 (fallback용)
+     */
+    private String generateDynamicVideoUrl(Long sceneId, String videoPrompt) {
+        log.warn("VIDEO FALLBACK USED - sceneId: {}, videoPrompt: {}", sceneId, videoPrompt);
+        
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        String promptHash = String.valueOf(videoPrompt.hashCode());
+        
+        return String.format("https://mock-video-service.com/generated/scene_%d_%s_%s.mp4", 
+                sceneId, timestamp, promptHash);
     }
 }

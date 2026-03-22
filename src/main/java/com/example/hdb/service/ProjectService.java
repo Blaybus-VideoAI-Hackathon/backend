@@ -28,4 +28,7 @@ public interface ProjectService {
     
     // 프로젝트 상태 업데이트
     Project updateProjectStatus(Long projectId, ProjectStatus status);
+    
+    // 프로젝트 삭제
+    void deleteProject(Long projectId, String loginId);
 }

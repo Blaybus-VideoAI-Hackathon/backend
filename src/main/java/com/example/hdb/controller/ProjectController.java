@@ -19,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/projects")
@@ -60,6 +61,23 @@ public class ProjectController extends BaseController {
                 .toList();
         
         return ResponseEntity.ok(ApiResponse.success(responses));
+    }
+
+    @Operation(summary = "프로젝트 삭제", description = "특정 프로젝트와 관련된 모든 데이터를 삭제합니다.")
+    @DeleteMapping("/{projectId}")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> deleteProject(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("프로젝트 삭제 요청 - 사용자: {}, 프로젝트: {}", loginId, projectId);
+        
+        projectService.deleteProject(projectId, loginId);
+        
+        return ResponseEntity.ok(
+                ApiResponse.success("프로젝트 삭제 완료",
+                        Map.of("deletedProjectId", projectId))
+        );
     }
 
     @Operation(summary = "프로젝트 상세 조회", description = "특정 프로젝트의 상세 정보를 조회합니다.")
