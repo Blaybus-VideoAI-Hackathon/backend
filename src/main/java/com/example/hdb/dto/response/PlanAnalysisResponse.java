@@ -5,12 +5,12 @@ import lombok.*;
 
 import java.util.List;
 
-@Schema(description = "프로젝트 기획 생성 응답")
+@Schema(description = "선택된 기획안 분석 응답")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PlanningGenerateResponse {
+public class PlanAnalysisResponse {
     
     @Schema(description = "프로젝트 ID")
     private Long projectId;
@@ -18,51 +18,17 @@ public class PlanningGenerateResponse {
     @Schema(description = "선택된 기획안 ID")
     private Integer selectedPlanId;
     
-    @Schema(description = "기획안 목록")
-    private List<Plan> plans;
+    @Schema(description = "프로젝트 핵심요소")
+    private ProjectCore projectCore;
+    
+    @Schema(description = "씬 플랜")
+    private ScenePlan scenePlan;
     
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class Plan {
-        
-        @Schema(description = "기획안 ID")
-        private Integer planId;
-        
-        @Schema(description = "기획안 제목")
-        private String title;
-        
-        @Schema(description = "기획안 초점")
-        private String focus;
-        
-        @Schema(description = "기획안 설명")
-        private String displayText;
-        
-        @Schema(description = "추천 이유")
-        private String recommendationReason;
-        
-        @Schema(description = "강점 목록")
-        private List<String> strengths;
-        
-        @Schema(description = "타겟 분위기")
-        private String targetMood;
-        
-        @Schema(description = "타겟 사용 사례")
-        private String targetUseCase;
-        
-        @Schema(description = "전체 스토리라인")
-        private String storyLine;
-        
-        @Schema(description = "핵심 요소")
-        private CoreElements coreElements;
-    }
-    
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class CoreElements {
+    public static class ProjectCore {
         
         @Schema(description = "영상 목적")
         private String purpose;
@@ -90,5 +56,40 @@ public class PlanningGenerateResponse {
         
         @Schema(description = "스토리라인")
         private String storyLine;
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ScenePlan {
+        
+        @Schema(description = "추천 씬 개수")
+        private Integer recommendedSceneCount;
+        
+        @Schema(description = "씬 목록")
+        private List<SceneInfo> scenes;
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SceneInfo {
+        
+        @Schema(description = "씬 순서")
+        private Integer sceneOrder;
+        
+        @Schema(description = "씬 요약")
+        private String summary;
+        
+        @Schema(description = "씬 목표")
+        private String sceneGoal;
+        
+        @Schema(description = "감성 비트")
+        private String emotionBeat;
+        
+        @Schema(description = "예상 소요 시간(초)")
+        private Integer estimatedDuration;
     }
 }

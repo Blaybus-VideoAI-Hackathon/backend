@@ -4,11 +4,13 @@ import com.example.hdb.dto.request.PlanCreateRequest;
 import com.example.hdb.dto.request.PlanSelectRequest;
 import com.example.hdb.dto.request.PlanningGenerateRequest;
 import com.example.hdb.dto.response.ApiResponse;
+import com.example.hdb.dto.response.PlanAnalysisResponse;
 import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.dto.response.ProjectPlanResponseV3;
 import com.example.hdb.dto.response.PlanSelectResponse;
 import com.example.hdb.dto.response.PlanningGenerateResponse;
 import com.example.hdb.dto.response.PlanningSummaryResponse;
+import com.example.hdb.dto.response.PromptGenerateResponse;
 import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.entity.ProjectPlan;
 import com.example.hdb.entity.ProjectStatus;
@@ -201,6 +203,38 @@ public class ProjectController extends BaseController {
         var summary = planningService.getPlanningSummary(projectId);
         
         return ResponseEntity.ok(ApiResponse.success(summary));
+    }
+
+    @Operation(summary = "선택된 기획안 분석", description = "선택된 기획안의 전체 스토리라인을 분석하여 프로젝트 핵심요소와 씬 플랜을 생성합니다.")
+    @PostMapping("/{projectId}/plans/{planId}/analyze")
+    public ResponseEntity<ApiResponse<PlanAnalysisResponse>> analyzeSelectedPlan(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Parameter(description = "기획안 ID") @PathVariable Integer planId,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("기획안 분석 - 사용자: {}, 프로젝트: {}, 기획안: {}", loginId, projectId, planId);
+        
+        // 기획안 분석 서비스 호출
+        var analysis = planningService.analyzeSelectedPlan(projectId, planId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("기획안 분석 완료", analysis));
+    }
+
+    @Operation(summary = "프롬프트 생성", description = "최종 확정된 데이터를 바탕으로 AI가 이미지/영상 프롬프트를 생성합니다.")
+    @PostMapping("/{projectId}/scenes/{sceneId}/prompt/generate")
+    public ResponseEntity<ApiResponse<PromptGenerateResponse>> generatePrompt(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Parameter(description = "씬 ID") @PathVariable Long sceneId,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("프롬프트 생성 - 사용자: {}, 프로젝트: {}, 씬: {}", loginId, projectId, sceneId);
+        
+        // 프롬프트 생성 서비스 호출
+        var prompt = planningService.generatePrompt(projectId, sceneId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("프롬프트 생성 완료", prompt));
     }
 
     private ProjectPlanResponseV3 convertToPlanResponseV3(ProjectPlan plan) {

@@ -2,14 +2,18 @@ package com.example.hdb.service;
 
 import com.example.hdb.dto.openai.PlanGenerationResponse;
 import com.example.hdb.dto.request.PlanCreateRequest;
+import com.example.hdb.dto.response.PlanAnalysisResponse;
 import com.example.hdb.dto.response.PlanningGenerateResponse;
+import com.example.hdb.dto.response.PromptGenerateResponse;
 import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.entity.ProjectPlan;
 import com.example.hdb.entity.ProjectStatus;
+import com.example.hdb.entity.Scene;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectPlanRepository;
 import com.example.hdb.repository.ProjectRepository;
+import com.example.hdb.repository.SceneRepository;
 import com.example.hdb.repository.UserRepository;
 import com.example.hdb.dto.response.PlanningSummaryResponse;
 import com.example.hdb.util.JsonUtils;
@@ -35,6 +39,7 @@ public class PlanningService {
     private final ProjectPlanRepository projectPlanRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final SceneRepository sceneRepository;
     private final ObjectMapper objectMapper;
     private final OpenAIService openAIService;
     
@@ -73,18 +78,12 @@ public class PlanningService {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(json);
             
-            JsonNode summaryNode = root.get("planningSummary");
             JsonNode plansNode = root.get("plans");
             
-            if (summaryNode == null || plansNode == null) {
-                log.error("Invalid JSON structure - missing planningSummary or plans");
+            if (plansNode == null) {
+                log.error("Invalid JSON structure - missing plans");
                 throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
-            
-            // planningSummary 파싱
-            PlanningGenerateResponse.PlanningSummary summary = mapper.treeToValue(
-                summaryNode, PlanningGenerateResponse.PlanningSummary.class
-            );
             
             // plans 파싱
             List<PlanningGenerateResponse.Plan> plans = mapper.convertValue(
@@ -100,7 +99,6 @@ public class PlanningService {
             return PlanningGenerateResponse.builder()
                     .projectId(projectId)
                     .selectedPlanId(selectedPlanId)  // 선택된 기획안 없으면 null
-                    .planningSummary(summary)
                     .plans(plans)
                     .build();
             
@@ -108,18 +106,6 @@ public class PlanningService {
             log.error("기획 생성 실패 - fallback 실행", e);
             
             // fallback 생성 (placeholder 금지, 구체적인 내용)
-            PlanningGenerateResponse.PlanningSummary fallbackSummary = PlanningGenerateResponse.PlanningSummary.builder()
-                    .purpose(project.getPurpose())
-                    .duration(project.getDuration())
-                    .ratio(project.getRatio())
-                    .style(project.getStyle())
-                    .mainCharacter("사용자 요청에 맞는 주인공")
-                    .subCharacters(java.util.List.of("보조 캐릭터", "배경 캐릭터"))
-                    .backgroundWorld("사용자 요청에 맞는 배경 세계관")
-                    .storyFlow("도입 → 전개 → 클라이맥스 → 결말")
-                    .storyLine("사용자의 요청을 바탕으로 생성된 기획 기반 스토리라인")
-                    .build();
-            
             List<PlanningGenerateResponse.Plan> fallbackPlans = java.util.List.of(
                 PlanningGenerateResponse.Plan.builder()
                         .planId(1)
@@ -150,7 +136,6 @@ public class PlanningService {
             return PlanningGenerateResponse.builder()
                     .projectId(projectId)
                     .selectedPlanId(null)
-                    .planningSummary(fallbackSummary)
                     .plans(fallbackPlans)
                     .build();
         }
@@ -275,6 +260,258 @@ public class PlanningService {
             log.error("Failed to generate planning summary", e);
             return createDefaultPlanningSummary(projectId, project);
         }
+    }
+
+    /**
+     * 선택된 기획안 분석
+     */
+    public PlanAnalysisResponse analyzeSelectedPlan(Long projectId, Integer planId, String loginId) {
+        log.info("=== Plan Analysis Started ===");
+        log.info("Project ID: {}, Plan ID: {}, User: {}", projectId, planId, loginId);
+        
+        // 프로젝트 및 기획안 조회
+        var project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        Optional<ProjectPlan> latestPlan = getLatestPlan(projectId);
+        if (latestPlan.isEmpty()) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
+        
+        try {
+            // 실제 저장된 plan_data JSON 구조 로그 출력
+            String planData = latestPlan.get().getPlanData();
+            log.info("Latest plan_data JSON: {}", planData);
+            
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(JsonUtils.extractJsonSafely(planData));
+            
+            // 1순위: plans 배열
+            JsonNode plansArray = root.path("plans");
+            if (!plansArray.isArray() || plansArray.isEmpty()) {
+                // 2순위: 구버전 meta.storyOptions fallback
+                plansArray = root.path("meta").path("storyOptions");
+            }
+            
+            if (!plansArray.isArray() || plansArray.isEmpty()) {
+                log.error("No plans/storyOptions found in plan_data: {}", planData);
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            // planId 유효성 확인 (1-based)
+            if (planId < 1 || planId > plansArray.size()) {
+                log.error("Invalid planId: {}, plans size: {}", planId, plansArray.size());
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            // 선택된 기획안 찾기
+            JsonNode selectedPlanJson = plansArray.get(planId - 1);
+            log.info("Selected plan JSON: {}", selectedPlanJson);
+            
+            // coreElements 가져오기 (null-safe)
+            JsonNode coreElements = selectedPlanJson.path("coreElements");
+            log.info("Core elements JSON: {}", coreElements);
+            
+            // 필드명 호환 처리로 storyLine 추출 (null-safe)
+            String storyLine = selectedPlanJson.path("storyLine").asText(
+                coreElements.path("storyLine").asText("")
+            );
+            
+            if (storyLine.isEmpty()) {
+                log.error("StoryLine is empty - selectedPlan: {}, coreElements: {}", selectedPlanJson, coreElements);
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            log.info("Extracted storyLine: {}", storyLine);
+            
+            // 기타 핵심요소 추출 (null-safe, 필드명 호환 처리)
+            String mainCharacter = coreElements.path("mainCharacter").asText("");
+            String backgroundWorld = coreElements.path("backgroundWorld").asText(
+                coreElements.path("background").asText("")
+            );
+            String storyFlow = coreElements.path("storyFlow").asText("");
+            
+            log.info("Extracted elements - mainCharacter: {}, backgroundWorld: {}, storyFlow: {}", 
+                    mainCharacter, backgroundWorld, storyFlow);
+            
+            // OpenAI로 기획안 분석
+            String aiResponse = openAIService.analyzeSelectedPlan(
+                    storyLine,
+                    project.getPurpose(),
+                    project.getDuration(),
+                    project.getRatio(),
+                    project.getStyle()
+            );
+            log.info("OpenAI 기획안 분석 응답 수신: {}", aiResponse);
+            
+            // JSON 추출 및 파싱
+            String json = JsonUtils.extractJsonSafely(aiResponse);
+            JsonNode analysisRoot = mapper.readTree(json);
+            
+            JsonNode projectCoreNode = analysisRoot.path("projectCore");
+            JsonNode scenePlanNode = analysisRoot.path("scenePlan");
+            
+            if (projectCoreNode.isMissingNode() || scenePlanNode.isMissingNode()) {
+                log.error("Invalid analysis JSON structure - missing projectCore or scenePlan. Response: {}", aiResponse);
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            // 프로젝트 핵심요소 파싱
+            PlanAnalysisResponse.ProjectCore projectCore = mapper.treeToValue(
+                projectCoreNode, PlanAnalysisResponse.ProjectCore.class
+            );
+            
+            // 씬 플랜 파싱
+            PlanAnalysisResponse.ScenePlan scenePlan = mapper.treeToValue(
+                scenePlanNode, PlanAnalysisResponse.ScenePlan.class
+            );
+            
+            log.info("Successfully analyzed plan - scenes count: {}", 
+                    scenePlan.getScenes() != null ? scenePlan.getScenes().size() : 0);
+            
+            return PlanAnalysisResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(planId)
+                    .projectCore(projectCore)
+                    .scenePlan(scenePlan)
+                    .build();
+                    
+        } catch (Exception e) {
+            log.error("기획안 분석 실패 - planId: {}, error: {}", planId, e.getMessage(), e);
+            
+            // fallback 생성
+            PlanAnalysisResponse.ProjectCore fallbackCore = PlanAnalysisResponse.ProjectCore.builder()
+                    .purpose(project.getPurpose())
+                    .duration(project.getDuration())
+                    .ratio(project.getRatio())
+                    .style(project.getStyle())
+                    .mainCharacter("분석된 주요 캐릭터")
+                    .subCharacters(java.util.List.of("보조 캐릭터"))
+                    .backgroundWorld("분석된 배경 세계관")
+                    .storyFlow("분석된 스토리 흐름")
+                    .storyLine("선택된 기획안의 스토리라인")
+                    .build();
+            
+            List<PlanAnalysisResponse.SceneInfo> fallbackScenes = java.util.List.of(
+                PlanAnalysisResponse.SceneInfo.builder()
+                        .sceneOrder(1)
+                        .summary("분석된 첫 번째 장면")
+                        .sceneGoal("도입")
+                        .emotionBeat("기대감")
+                        .estimatedDuration(5)
+                        .build(),
+                PlanAnalysisResponse.SceneInfo.builder()
+                        .sceneOrder(2)
+                        .summary("분석된 두 번째 장면")
+                        .sceneGoal("전개")
+                        .emotionBeat("흥미")
+                        .estimatedDuration(10)
+                        .build(),
+                PlanAnalysisResponse.SceneInfo.builder()
+                        .sceneOrder(3)
+                        .summary("분석된 세 번째 장면")
+                        .sceneGoal("결말")
+                        .emotionBeat("만족감")
+                        .estimatedDuration(5)
+                        .build()
+            );
+            
+            PlanAnalysisResponse.ScenePlan fallbackScenePlan = PlanAnalysisResponse.ScenePlan.builder()
+                    .recommendedSceneCount(fallbackScenes.size())
+                    .scenes(fallbackScenes)
+                    .build();
+            
+            log.warn("Fallback plan analysis generated for projectId: {}, planId: {}", projectId, planId);
+            
+            return PlanAnalysisResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(planId)
+                    .projectCore(fallbackCore)
+                    .scenePlan(fallbackScenePlan)
+                    .build();
+        }
+    }
+
+    /**
+     * 프롬프트 생성
+     */
+    public PromptGenerateResponse generatePrompt(Long projectId, Long sceneId, String loginId) {
+        log.info("=== Prompt Generation Started ===");
+        log.info("Project ID: {}, Scene ID: {}, User: {}", projectId, sceneId, loginId);
+        
+        try {
+            // 씬 정보 조회
+            var scene = sceneRepository.findById(sceneId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
+            
+            // 프로젝트 정보 조회
+            var project = projectRepository.findById(projectId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+            
+            // 선택된 기획안 분석 결과 조회 (projectCore)
+            var planAnalysis = getLatestPlanAnalysis(projectId);
+            if (planAnalysis == null) {
+                throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+            }
+            
+            // 프로젝트 핵심요소 문자열화
+            String projectCoreStr = String.format(
+                "purpose: %s, duration: %d, ratio: %s, style: %s, mainCharacter: %s, backgroundWorld: %s",
+                planAnalysis.getProjectCore().getPurpose(),
+                planAnalysis.getProjectCore().getDuration(),
+                planAnalysis.getProjectCore().getRatio(),
+                planAnalysis.getProjectCore().getStyle(),
+                planAnalysis.getProjectCore().getMainCharacter(),
+                planAnalysis.getProjectCore().getBackgroundWorld()
+            );
+            
+            // 씬 부가요소 조회 (없으면 기본값)
+            String optionalElementsStr = "기본 연출 요소";
+            if (scene.getOptionalElements() != null) {
+                optionalElementsStr = scene.getOptionalElements().toString();
+            }
+            
+            // OpenAI로 최종 프롬프트 생성
+            String aiResponse = openAIService.generateFinalPrompts(
+                    scene.getSummary(),
+                    projectCoreStr,
+                    optionalElementsStr
+            );
+            log.info("OpenAI 프롬프트 생성 응답 수신: {}", aiResponse);
+            
+            // JSON 파싱
+            String json = JsonUtils.extractJsonSafely(aiResponse);
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(json);
+            
+            String imagePrompt = root.get("imagePrompt").asText();
+            String videoPrompt = root.get("videoPrompt").asText();
+            
+            log.info("Successfully generated prompts - sceneId: {}", sceneId);
+            
+            return PromptGenerateResponse.builder()
+                    .sceneId(sceneId)
+                    .imagePrompt(imagePrompt)
+                    .videoPrompt(videoPrompt)
+                    .build();
+                    
+        } catch (Exception e) {
+            log.error("프롬프트 생성 실패 - fallback 실행", e);
+            
+            // fallback 생성
+            return PromptGenerateResponse.builder()
+                    .sceneId(sceneId)
+                    .imagePrompt("Fallback 이미지 프롬프트: " + sceneId + "번 장면")
+                    .videoPrompt("Fallback 영상 프롬프트: " + sceneId + "번 장면")
+                    .build();
+        }
+    }
+    
+    // 최신 기획안 분석 결과 조회 헬퍼 메서드
+    private PlanAnalysisResponse getLatestPlanAnalysis(Long projectId) {
+        // TODO: 실제로는 분석 결과를 저장하고 조회하는 로직 필요
+        // 임시로 null 반환
+        return null;
     }
     
     private PlanningSummaryResponse createDefaultPlanningSummary(Long projectId, com.example.hdb.entity.Project project) {

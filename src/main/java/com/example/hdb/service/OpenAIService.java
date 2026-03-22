@@ -84,6 +84,189 @@ public class OpenAIService {
     // ========== 신규 메서드 (C단계 GPT 연동) ==========
     
     /**
+     * 씬 부가요소 생성을 위한 OpenAI 호출
+     */
+    public String generateSceneOptionalElements(String sceneSummary, String sceneGoal, String emotionBeat, String overallStoryLine, String projectCore) {
+        String systemPrompt = """
+            당신은 전문 영상 연출가입니다. 특정 씬의 정보와 전체 스토리라인을 바탕으로 구체적인 부가요소를 생성해주세요.
+            
+            씬 정보:
+            - 씬 요약: %s
+            - 씬 목표: %s
+            - 감성 비트: %s
+            
+            전체 스토리라인: %s
+            
+            프로젝트 핵심요소: %s
+            
+            생성 요구사항:
+            1. 이 씬이 전체 스토리에서 가지는 역할을 반영
+            2. 감성 비트에 맞는 연출 요소 구체화
+            3. 실제 제작 가능한 수준의 상세한 요소
+            4. 모든 필드에 구체적인 내용 작성, placeholder 금지
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "action": "구체적인 액션 설명",
+              "pose": "구체적인 포즈 설명",
+              "camera": "카메라 앵글 (예: 미디엄 샷, 클로즈업)",
+              "cameraMotion": "카메라 움직임 (예: 천천히 줌 인, 패닝)",
+              "lighting": "조명 상세 설명",
+              "mood": "장면의 분위기",
+              "timeOfDay": "시간대",
+              "effects": ["효과1", "효과2"],
+              "backgroundCharacters": ["배경 캐릭터1", "배경 캐릭터2"],
+              "environmentDetail": "환경 디테일 상세 설명"
+            }
+            """.formatted(sceneSummary, sceneGoal, emotionBeat, overallStoryLine, projectCore);
+        
+        String userPrompt = String.format("""
+            위 씬 정보를 바탕으로 구체적인 부가요소를 생성해주세요.
+            
+            중요 포인트:
+            1. 이 씬의 목표(%s)와 감성 비트(%s)를 반영한 연출
+            2. 전체 스토리라인과의 일관성 유지
+            3. 실제 제작 시 참고할 수 있는 수준의 구체성
+            4. 시청자의 몰입을 높일 수 있는 디테일
+            
+            주의사항:
+            - 막연한 표현 금지 ("자연스러운 조명" → "따뜻한 실내 조명, 창문으로 들어오는 부드러운 햇빛")
+            - 모든 요소는 서로 연결되어야 함
+            - 감성 비트에 맞는 분위기 설정
+            """, sceneGoal, emotionBeat);
+        
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    /**
+     * 최종 프롬프트 생성을 위한 OpenAI 호출
+     */
+    public String generateFinalPrompts(String sceneSummary, String projectCore, String optionalElements) {
+        String systemPrompt = """
+            당신은 전문 AI 프롬프트 엔지니어입니다. 확정된 씬 정보를 바탕으로 이미지 생성 AI와 영상 생성 AI를 위한 최종 프롬프트를 생성해주세요.
+            
+            씬 요약: %s
+            
+            프로젝트 핵심요소: %s
+            
+            씬 부가요소: %s
+            
+            프롬프트 생성 요구사항:
+            1. 이미지 생성용 프롬프트: 정적인 이미지에 초점
+            2. 영상 생성용 프롬프트: 동적인 영상 연출에 초점
+            3. 모든 정보를 종합하여 완성된 하나의 장면 묘사
+            4. AI가 이해하기 쉬운 구체적이고 상세한 표현
+            5. 스타일, 분위기, 조명, 구도 등 모든 요소 포함
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "imagePrompt": "이미지 생성 AI를 위한 상세한 프롬프트. 스타일, 조명, 구도, 분위기, 캐릭터 표현, 배경 등 모든 요소를 포함한 완성된 문장.",
+              "videoPrompt": "영상 생성 AI를 위한 상세한 프롬프트. 카메라 움직임, 액션, 전환 효과, 시간 흐름 등 동적인 요소를 포함한 완성된 문장."
+            }
+            """.formatted(sceneSummary, projectCore, optionalElements);
+        
+        String userPrompt = """
+            위 정보를 바탕으로 이미지 생성과 영상 생성을 위한 최종 프롬프트를 생성해주세요.
+            
+            프롬프트 작성 가이드:
+            1. 이미지 프롬프트: 정적인 한 장면을 완벽하게 묘사
+            2. 영상 프롬프트: 동적인 흐름과 움직임을 묘사
+            3. 두 프롬프트 모두 동일한 장면을 묘사하지만 초점이 다름
+            4. 구체적인 수치와 표현 사용 (예: "따뜻한 색감" → "파스텔 톤의 따뜻한 분위기")
+            5. 전문가 수준의 상세한 묘사
+            
+            중요:
+            - 프롬프트는 실제 AI 서비스에서 바로 사용 가능한 완성된 문장
+            - 기술적 용어와 예술적 표현의 균형
+            - 시각적으로 명확한 이미지가 떠오르도록 작성
+            """;
+        
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    /**
+     * 선택된 기획안 분석을 위한 OpenAI 호출
+     */
+    public String analyzeSelectedPlan(String storyLine, String projectPurpose, Integer duration, String ratio, String style) {
+        String systemPrompt = """
+            당신은 전문 비디오 프로듀서입니다. 선택된 기획안의 전체 스토리라인을 분석하여 실제 제작 가능한 구조 데이터를 생성해주세요.
+            
+            분석 대상 스토리라인: %s
+            
+            분석 요구사항:
+            1. 전체 스토리라인을 자연스러운 씬으로 분할
+            2. 각 씬의 명확한 역할과 목표 정의
+            3. 감성 비트(emotion beat) 설정
+            4. 각 씬의 예상 소요 시간 계산
+            5. 프로젝트 핵심요소 추출 및 구체화
+            
+            중요:
+            - 씬 개수는 영상 길이(%d초)와 스토리 복잡성에 맞게 자동 결정
+            - 각 씬은 전체 스토리라인의 자연스러운 일부여야 함
+            - 단순한 나열이 아니라, 각 씬이 다음 씬으로 이어지는 흐름을 만들어야 함
+            - 모든 필드에 구체적인 내용 작성, placeholder 금지
+            
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "projectCore": {
+                "purpose": "%s",
+                "duration": %d,
+                "ratio": "%s",
+                "style": "%s",
+                "mainCharacter": "스토리라인에서 추출한 구체적인 주요 캐릭터",
+                "subCharacters": ["보조 캐릭터1", "보조 캐릭터2"],
+                "backgroundWorld": "스토리라인에서 추출한 구체적인 배경 세계관",
+                "storyFlow": "전체 스토리의 자연스러운 흐름",
+                "storyLine": "%s"
+              },
+              "scenePlan": {
+                "recommendedSceneCount": 3,
+                "scenes": [
+                  {
+                    "sceneOrder": 1,
+                    "summary": "첫 번째 씬의 구체적인 내용",
+                    "sceneGoal": "이 씬의 목표",
+                    "emotionBeat": "이 씬의 감성 비트",
+                    "estimatedDuration": 5
+                  },
+                  {
+                    "sceneOrder": 2,
+                    "summary": "두 번째 씬의 구체적인 내용",
+                    "sceneGoal": "이 씬의 목표",
+                    "emotionBeat": "이 씬의 감성 비트",
+                    "estimatedDuration": 8
+                  },
+                  {
+                    "sceneOrder": 3,
+                    "summary": "세 번째 씬의 구체적인 내용",
+                    "sceneGoal": "이 씬의 목표",
+                    "emotionBeat": "이 씬의 감성 비트",
+                    "estimatedDuration": 7
+                  }
+                ]
+              }
+            }
+            """.formatted(storyLine, duration, projectPurpose, duration, ratio, style, storyLine);
+        
+        String userPrompt = String.format("""
+            위 스토리라인을 분석하여 실제 제작 가능한 구조 데이터를 생성해주세요.
+            
+            분석 포인트:
+            1. 스토리라인을 자연스러운 씬으로 분할
+            2. 각 씬의 역할과 감성 흐름 설정
+            3. 전체 영상 길이(%d초)에 맞는 시간 배분
+            4. 프로젝트 정보(%s, %s, %s)와의 일관성
+            
+            주의사항:
+            - 각 씬은 독립적이면서도 전체 스토리의 일부여야 함
+            - 감성 비트는 시청자의 감정 흐름을 고려하여 설정
+            - 모든 내용은 구체적이고 실제 제작 가능해야 함
+            """, duration, projectPurpose, ratio, style);
+        
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    /**
      * 프로젝트 기획 생성을 위한 OpenAI 호출 (planningSummary + plans)
      */
     public String generatePlanningWithSummary(String userPrompt, String projectPurpose, Integer duration, String ratio, String style) {
