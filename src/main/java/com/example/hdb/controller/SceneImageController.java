@@ -29,11 +29,12 @@ public class SceneImageController extends BaseController {
     @Operation(summary = "프로젝트 전체 이미지 목록 조회", description = "프로젝트에 속한 모든 씬의 이미지 목록을 조회합니다.")
     @GetMapping("/{projectId}/images")
     public ResponseEntity<ApiResponse<List<SceneImageResponse>>> getProjectImages(
-            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId) {
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
         
-        log.info("Getting all images for project: {}", projectId);
+        String loginId = resolveLoginId(authentication);
+        log.info("Getting all images for project: {}, user: {}", projectId, loginId);
         
-        String loginId = "user1"; // 임시 fallback
         List<SceneImageResponse> images = sceneImageService.getProjectImages(projectId, loginId);
         
         return ResponseEntity.ok(ApiResponse.success("프로젝트 이미지 목록 조회 성공", images));

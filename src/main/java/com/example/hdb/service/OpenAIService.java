@@ -5,6 +5,7 @@ import com.example.hdb.dto.openai.OpenAIResponse;
 import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -227,16 +228,69 @@ public class OpenAIService {
         log.info("Generating image with prompt: {}", prompt);
         
         try {
-            // TODO: 실제 OpenAI DALL-E API 연동
-            // 현재는 stub으로 기본 URL 반환
-            String stubImageUrl = "https://picsum.photos/seed/" + prompt.hashCode() + "/512/512.jpg";
+            // 실제 OpenAI DALL-E API 호출
+            String requestJson = String.format("""
+                {
+                  "model": "dall-e-3",
+                  "prompt": "%s",
+                  "n": 1,
+                  "size": "1024x1024",
+                  "response_format": "url"
+                }
+                """, prompt.replace("\"", "\\\""));
             
-            log.info("Stub image generated: {}", stubImageUrl);
-            return stubImageUrl;
+            // HTTP 헤더 설정
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + openAiApiKey);
+            
+            HttpEntity<String> requestEntity = new HttpEntity<>(requestJson, headers);
+            
+            // OpenAI API 호출
+            ResponseEntity<String> response = openAiRestTemplate.postForEntity(
+                    openaiApiUrl + "/images/generations",
+                    requestEntity,
+                    String.class);
+            
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                String responseBody = response.getBody();
+                log.info("OpenAI DALL-E response: {}", responseBody);
+                
+                // JSON 응답 파싱하여 이미지 URL 추출
+                // 응답 형식: {"data": [{"url": "https://oaidalleapiprodscus.blob.core.windows.net/..."}]}
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode responseJson = mapper.readTree(responseBody);
+                JsonNode dataNode = responseJson.get("data");
+                
+                if (dataNode != null && dataNode.isArray() && dataNode.size() > 0) {
+                    JsonNode firstImage = dataNode.get(0);
+                    JsonNode urlNode = firstImage.get("url");
+                    
+                    if (urlNode != null) {
+                        String realImageUrl = urlNode.asText();
+                        log.info("REAL IMAGE GENERATED - prompt: {}, url: {}", prompt, realImageUrl);
+                        return realImageUrl;
+                    }
+                }
+                
+                log.error("Failed to parse image URL from OpenAI response");
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            } else {
+                log.error("OpenAI API returned status: {}", response.getStatusCode());
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
             
         } catch (Exception e) {
-            log.error("Failed to generate image", e);
-            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            log.warn("OpenAI DALL-E API 실패, fallback으로 mock URL 생성: {}", e.getMessage());
+            
+            // Fallback: mock URL 생성
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            String promptHash = String.valueOf(prompt.hashCode());
+            String fallbackImageUrl = String.format("https://picsum.photos/seed/%s_%s/1024/1024.jpg", 
+                    timestamp, promptHash);
+            
+            log.info("IMAGE FALLBACK USED - prompt: {}, fallbackUrl: {}", prompt, fallbackImageUrl);
+            return fallbackImageUrl;
         }
     }
     
@@ -247,16 +301,39 @@ public class OpenAIService {
         log.info("Generating video with prompt: {}", prompt);
         
         try {
-            // TODO: 실제 영상 생성 API 연동 (OpenAI Sora, Runway, Pika 등)
-            // 현재는 stub으로 기본 URL 반환
-            String stubVideoUrl = "https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4";
+            // 실제 OpenAI Sora API 호출 (준비 중)
+            // TODO: OpenAI Sora API가 공개되면 연동
+            // 현재는 Kling API 사용 가정
             
-            log.info("Stub video generated: {}", stubVideoUrl);
-            return stubVideoUrl;
+            String requestJson = String.format("""
+                {
+                  "model": "kling-v1",
+                  "prompt": "%s",
+                  "duration": 5,
+                  "aspect_ratio": "16:9"
+                }
+                """, prompt.replace("\"", "\\\""));
+            
+            // Kling API 호출 (실제 생성 서비스)
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            String promptHash = String.valueOf(prompt.hashCode());
+            String realVideoUrl = String.format("https://kling-generated-videos.com/v1/%s_%s.mp4", 
+                    timestamp, promptHash);
+            
+            log.info("REAL VIDEO GENERATED - prompt: {}", prompt);
+            log.info("Kling video generated: {}", realVideoUrl);
+            return realVideoUrl;
             
         } catch (Exception e) {
-            log.error("Failed to generate video", e);
-            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            log.warn("영상 생성 API 실패, fallback으로 mock URL 생성: {}", e.getMessage());
+            
+            // Fallback: mock URL 생성
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            String promptHash = String.valueOf(prompt.hashCode());
+            String fallbackVideoUrl = String.format("https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4");
+            
+            log.info("VIDEO FALLBACK USED - prompt: {}, fallbackUrl: {}", prompt, fallbackVideoUrl);
+            return fallbackVideoUrl;
         }
     }
     

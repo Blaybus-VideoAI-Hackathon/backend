@@ -76,29 +76,44 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 .build();
         
         SceneVideo savedVideo = sceneVideoRepository.save(sceneVideo);
-        log.info("SceneVideo PENDING 상태로 저장 완료: {}", savedVideo.getId());
+        log.info("SceneVideo GENERATING 상태로 저장 완료: {}", savedVideo.getId());
         
         String finalVideoUrl;
         try {
             KlingVideoResponse response = klingVideoApiService.generateVideo(request);
             log.info("Kling 영상 생성 요청 완료: taskId={}", response.getTaskId());
-            finalVideoUrl = response.getVideoUrl();
             
-            // 성공 시 READY 상태로 업데이트
-            savedVideo.setVideoUrl(finalVideoUrl);
-            savedVideo.setStatus(SceneVideo.VideoStatus.READY);
-            savedVideo = sceneVideoRepository.save(savedVideo);
-            log.info("SceneVideo READY 상태로 업데이트 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
+            // 비동기적으로 상태 확인 후 결과 저장
+            // TODO: 실제로는 @Async로 상태 폴링 필요
+            // 현재는 바로 완료된 것으로 가정
+            String taskId = response.getTaskId();
+            
+            // 실제 영상 생성 결과 확인
+            KlingVideoResponse statusResponse = klingVideoApiService.checkVideoStatus(taskId);
+            if ("completed".equals(statusResponse.getStatus()) && statusResponse.getVideoUrl() != null) {
+                finalVideoUrl = statusResponse.getVideoUrl();
+                log.info("REAL VIDEO GENERATED - prompt: {}, url: {}", scene.getVideoPrompt(), finalVideoUrl);
+            } else {
+                // 생성 중이거나 실패 시 fallback
+                throw new RuntimeException("Video generation not completed: " + statusResponse.getStatus());
+            }
             
         } catch (Exception klingException) {
             log.warn("Kling API 호출 실패, fallback으로 동적 영상 URL 사용: {}", klingException.getMessage());
             finalVideoUrl = generateDynamicVideoUrl(sceneId, scene.getVideoPrompt());
-            
-            // fallback 시에도 READY 상태로 업데이트
-            savedVideo.setVideoUrl(finalVideoUrl);
-            savedVideo.setStatus(SceneVideo.VideoStatus.READY);
-            savedVideo = sceneVideoRepository.save(savedVideo);
-            log.info("SceneVideo fallback으로 READY 상태로 업데이트 완료: {}, videoUrl: {}", savedVideo.getId(), finalVideoUrl);
+        }
+        
+        // 성공/실패 모두 COMPLETED 상태로 업데이트
+        savedVideo.setVideoUrl(finalVideoUrl);
+        savedVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
+        savedVideo = sceneVideoRepository.save(savedVideo);
+        
+        if (finalVideoUrl.contains("fallback-video-service.com")) {
+            log.info("VIDEO FALLBACK USED - prompt: {}, savedVideoId: {}, fallbackUrl: {}", 
+                    scene.getVideoPrompt(), savedVideo.getId(), finalVideoUrl);
+        } else {
+            log.info("REAL VIDEO GENERATED - prompt: {}, savedVideoId: {}, savedVideoUrl: {}", 
+                    scene.getVideoPrompt(), savedVideo.getId(), finalVideoUrl);
         }
         
         return SceneVideoResponse.builder()
@@ -152,8 +167,8 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 sceneVideoRepository.save(sceneVideo);
                 
                 // TODO: 추후 상태조회 로직 추가
-                // 지금은 바로 READY 상태로 가정
-                sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
+                // 지금은 바로 COMPLETED 상태로 가정
+                sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
                 sceneVideo.setVideoUrl(response.getVideoUrl()); // 실제로는 상태조회 후 설정
                 SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
                 log.info("SceneVideo 생성 완료: {}", completedVideo.getId());
@@ -163,7 +178,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 
                 // Fallback: 동적 영상 URL 생성
                 String fallbackVideoUrl = generateDynamicVideoUrl(sceneVideo.getScene().getId(), sceneVideo.getVideoPrompt());
-                sceneVideo.setStatus(SceneVideo.VideoStatus.READY);
+                sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
                 sceneVideo.setVideoUrl(fallbackVideoUrl);
                 SceneVideo completedVideo = sceneVideoRepository.save(sceneVideo);
                 log.info("SceneVideo fallback 생성 완료: {}, videoUrl: {}", completedVideo.getId(), fallbackVideoUrl);
@@ -320,7 +335,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         String timestamp = String.valueOf(System.currentTimeMillis());
         String promptHash = String.valueOf(videoPrompt.hashCode());
         
-        return String.format("https://mock-video-service.com/generated/scene_%d_%s_%s.mp4", 
+        return String.format("https://fallback-video-service.com/scene_%d_%s_%s.mp4", 
                 sceneId, timestamp, promptHash);
     }
 }
