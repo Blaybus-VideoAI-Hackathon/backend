@@ -84,99 +84,193 @@ public class OpenAIService {
     // ========== 신규 메서드 (C단계 GPT 연동) ==========
     
     /**
-     * 기획 생성을 위한 OpenAI 호출 (3개 기획안 추천 전용)
+     * 프로젝트 기획 생성을 위한 OpenAI 호출 (planningSummary + plans)
      */
-    public String generatePlan(String userPrompt) {
+    public String generatePlanningWithSummary(String userPrompt, String projectPurpose, Integer duration, String ratio, String style) {
         String systemPrompt = """
-            당신은 창의적인 비디오 콘텐츠 기획자입니다. 사용자의 요청을 바탕으로 3가지 완전히 다른 스타일의 기획안을 생성해주세요.
+            당신은 전문 비디오 광고 기획가입니다. 사용자의 요청과 프로젝트 정보를 바탕으로 기획 요약과 3개의 명확히 차별화된 기획안을 생성해주세요.
             
-            각 기획안은 다음과 같이 명확히 다른 방향성을 가져야 합니다:
+            중요 요구사항:
+            1. planningSummary: 사용자 아이디어를 기획 관점에서 자연스러운 문장으로 재작성
+            2. purpose, duration, ratio, style는 프로젝트 정보 그대로 사용
+            3. mainCharacter, subCharacters, backgroundWorld, storyFlow, storyLine은 구체적으로 생성
+            4. plans는 3개의 명확히 차별화된 기획안으로 구성
+            5. placeholder 문구 금지 ("주요 인물", "배경 설정" 등 금지)
+            6. storyLine은 사용자 원문 그대로 복사 금지, 기획용 문장으로 재작성
             
-            A안: 제품 중심 기획
-            - 제품의 디자인, 특징, 기술적 우수성 강조
-            - 제품의 혁신적인 기능과 차별점을 부각
-            - 테크니컬하고 세련된 톤앤매너
-            - 제품의 아름다움과 성능을 보여주는 장면 구성
+            반드시 JSON 형식으로 응답해주세요:
+            {
+              "planningSummary": {
+                "purpose": "%s",
+                "duration": %d,
+                "ratio": "%s",
+                "style": "%s",
+                "mainCharacter": "구체적인 주요 캐릭터",
+                "subCharacters": ["구체적인 보조 캐릭터1", "구체적인 보조 캐릭터2"],
+                "backgroundWorld": "구체적인 배경 세계관",
+                "storyFlow": "구체적인 스토리 흐름",
+                "storyLine": "사용자 아이디어를 기획 관점에서 재작성한 자연스러운 문장"
+              },
+              "plans": [
+                {
+                  "planId": 1,
+                  "title": "첫 번째 기획안 제목",
+                  "focus": "기획안 초점",
+                  "displayText": "기획안 상세 설명",
+                  "recommendationReason": "추천 이유",
+                  "strengths": ["강점1", "강점2"],
+                  "targetMood": "타겟 분위기",
+                  "targetUseCase": "타겟 사용 사례",
+                  "storyLine": "스토리라인",
+                  "coreElements": {
+                    "purpose": "%s",
+                    "duration": %d,
+                    "ratio": "%s",
+                    "style": "%s",
+                    "mainCharacter": "구체적인 주요 캐릭터",
+                    "subCharacters": ["구체적인 보조 캐릭터1", "구체적인 보조 캐릭터2"],
+                    "backgroundWorld": "구체적인 배경 세계관",
+                    "storyFlow": "구체적인 스토리 흐름",
+                    "storyLine": "구체적인 스토리라인"
+                  }
+                },
+                {
+                  "planId": 2,
+                  "title": "두 번째 기획안 제목",
+                  "focus": "기획안 초점",
+                  "displayText": "기획안 상세 설명",
+                  "recommendationReason": "추천 이유",
+                  "strengths": ["강점1", "강점2"],
+                  "targetMood": "타겟 분위기",
+                  "targetUseCase": "타겟 사용 사례",
+                  "storyLine": "스토리라인",
+                  "coreElements": {
+                    "purpose": "%s",
+                    "duration": %d,
+                    "ratio": "%s",
+                    "style": "%s",
+                    "mainCharacter": "구체적인 주요 캐릭터",
+                    "subCharacters": ["구체적인 보조 캐릭터1", "구체적인 보조 캐릭터2"],
+                    "backgroundWorld": "구체적인 배경 세계관",
+                    "storyFlow": "구체적인 스토리 흐름",
+                    "storyLine": "구체적인 스토리라인"
+                  }
+                },
+                {
+                  "planId": 3,
+                  "title": "세 번째 기획안 제목",
+                  "focus": "기획안 초점",
+                  "displayText": "기획안 상세 설명",
+                  "recommendationReason": "추천 이유",
+                  "strengths": ["강점1", "강점2"],
+                  "targetMood": "타겟 분위기",
+                  "targetUseCase": "타겟 사용 사례",
+                  "storyLine": "스토리라인",
+                  "coreElements": {
+                    "purpose": "%s",
+                    "duration": %d,
+                    "ratio": "%s",
+                    "style": "%s",
+                    "mainCharacter": "구체적인 주요 캐릭터",
+                    "subCharacters": ["구체적인 보조 캐릭터1", "구체적인 보조 캐릭터2"],
+                    "backgroundWorld": "구체적인 배경 세계관",
+                    "storyFlow": "구체적인 스토리 흐름",
+                    "storyLine": "구체적인 스토리라인"
+                  }
+                }
+              ]
+            }
+            """.formatted(projectPurpose, duration, ratio, style, 
+                          projectPurpose, duration, ratio, style, 
+                          projectPurpose, duration, ratio, style);
+        
+        String formattedUserPrompt = String.format("""
+            사용자 요청: %s
             
-            B안: 감성 중심 기획
-            - 사용자의 라이프스타일과 감성적 경험 강조
-            - 제품이 가져다줄 감동과 변화에 초점
-            - 따뜻하고 감성적인 톤앤매너
-            - 인물의 감정 변화와 일상 속 순간들을 강조
+            위 요청을 바탕으로 다음 정보를 포함한 기획을 생성해주세요:
+            - 기획 요약(planningSummary): 사용자 아이디어를 기획 관점에서 자연스러운 문장으로 재작성
+            - 3개의 차별화된 기획안(plans): 각각 다른 초점과 접근 방식
             
-            C안: 기능 시연 중심 기획
-            - 실제 사용 방법과 활용 장면 구체적으로 보여줌
-            - 문제 해결과 편의성 강조
-            - 실용적이고 신뢰감 있는 톤앤매너
-            - 다양한 사용 상황과 실제 활용 사례 중심
+            주의사항:
+            - storyLine은 사용자 원문을 그대로 사용하지 말고 기획용 문장으로 재작성
+            - 모든 필드에 구체적인 내용 작성, placeholder 금지
+            - 프로젝트 정보(%s, %d초, %s, %s)를 반드시 반영
+            """, userPrompt, projectPurpose, duration, ratio, style);
+        
+        return callOpenAI(systemPrompt, formattedUserPrompt);
+    }
+
+    /**
+     * 기획 생성을 위한 OpenAI 호출 (차별화 강화)
+     */
+    public String generatePlan(String userPrompt, String projectPurpose, Integer duration, String ratio, String style) {
+        String systemPrompt = """
+            당신은 전문 비디오 광고 기획가입니다. 사용자의 요청과 프로젝트 정보를 바탕으로 3개의 명확히 차별화된 기획안을 생성해주세요.
+            
+            각 기획안은 다음 축으로 명확히 달라야 합니다:
+            - 전개 방식: 감성 중심 / 액션 중심 / 코미디 중심 / 브랜딩 중심 / 숏폼 훅 중심
+            - 분위기: 따뜻함 / 긴장감 / 유쾌함 / 고급스러움 / 몽환적
+            - 카메라/연출 방향
+            - 타겟 반응 포인트
+            - 장면 구성 방식
+            - 추천 이유
+            
+            중요:
+            - 프로젝트의 purpose, duration, ratio, style을 반드시 반영
+            - placeholder 문구 금지, 모든 필드에 구체적인 내용 작성
+            - 각 기획안은 실제 제작 가능한 상세 내용 포함
             
             반드시 JSON 형식으로 응답해주세요:
             {
               "plans": [
                 {
                   "planId": 1,
-                  "title": "제품 중심 기획안",
-                  "focus": "제품 중심",
-                  "displayText": "제품의 혁신적인 디자인과 기술적 우수성을 강조하는 세련된 테크 기획안입니다. 제품의 아름다움과 성능을 시각적으로 극대화하여 브랜드의 기술력을 보여줍니다.",
-                  "coreElements": {
-                    "mainCharacter": "주요 캐릭터",
-                    "background": "배경 설정",
-                    "style": "스타일",
-                    "ratio": "화면 비율",
-                    "purpose": "목적"
-                  }
-                },
-                {
-                  "planId": 2,
-                  "title": "감성 중심 기획안",
+                  "title": "따뜻한 감성 스토리텔링 광고",
                   "focus": "감성 중심",
-                  "displayText": "사용자의 감성적 경험과 라이프스타일 변화를 그리는 감동적인 스토리텔링 기획안입니다. 제품이 가져다줄 따뜻한 순간들과 감동을 중심으로 잠재고객의 마음을 움직입니다.",
+                  "displayText": "주인공의 성장과 변화를 따뜻하게 그려내며 시청자의 감성을 자극하는 스토리텔링 광고입니다.",
+                  "recommendationReason": "따뜻한 감성으로 브랜드 이미지를 강화하고, 시청자의 공감을 얻어 자발적인 공유를 유도합니다.",
+                  "strengths": ["강력한 감성 연결", "높은 공감도", "바이럴 확산 가능성"],
+                  "targetMood": "따뜻함, 감동, 희망",
+                  "targetUseCase": "브랜드 인지도 향상, 감성 마케팅",
                   "coreElements": {
-                    "mainCharacter": "주요 캐릭터",
-                    "background": "배경 설정",
-                    "style": "스타일",
-                    "ratio": "화면 비율",
-                    "purpose": "목적"
-                  }
-                },
-                {
-                  "planId": 3,
-                  "title": "기능 시연 중심 기획안",
-                  "focus": "기능 시연 중심",
-                  "displayText": "실제 사용 방법과 다양한 활용 장면을 구체적으로 보여주는 실용적인 기획안입니다. 문제 해결과 편의성을 강조하며 제품의 신뢰성과 실용성을 입증합니다.",
-                  "coreElements": {
-                    "mainCharacter": "주요 캐릭터",
-                    "background": "배경 설정",
-                    "style": "스타일",
-                    "ratio": "화면 비율",
-                    "purpose": "목적"
-                  }
+                    "purpose": "%s",
+                    "duration": %d,
+                    "ratio": "%s",
+                    "style": "%s",
+                    "mainCharacter": "성장하는 주인공",
+                    "subCharacters": ["조력자", "경쟁자"],
+                    "backgroundWorld": "현실적인 일상 공간",
+                    "storyFlow": "도입 → 갈등 → 성장 → 해결",
+                    "storyLine": "일상의 고민에 부딪힌 주인공이 브랜드 제품을 통해 새로운 가능성을 발견하고 성장하는 이야기"
+                  },
+                  "storyLine": "일상의 고민에 부딪힌 주인공이 브랜드 제품을 통해 새로운 가능성을 발견하고 성장하는 이야기"
                 }
               ]
             }
             """;
         
         String fullUserPrompt = String.format("""
-            다음 사용자 요청을 바탕으로 위에서 명시한 A/B/C 3가지 다른 스타일의 비디오 기획안을 구체적으로 생성해주세요:
+            다음 정보를 바탕으로 3개의 차별화된 비디오 광고 기획안을 생성해주세요:
             
             사용자 요청: %s
+            영상 목적: %s
+            영상 길이: %d초
+            영상 비율: %s
+            영상 스타일: %s
+            
+            각 기획안은 다른 전개 방식과 분위기를 가지도록 해주세요:
+            1. 감성 중심 또는 브랜딩 중심
+            2. 액션 중심 또는 숏폼 훅 중심  
+            3. 코미디 중심 또는 고급스러움 중심
             
             중요:
-            - A안은 제품의 디자인, 기능, 기술적 특징을 세련되게 강조
-            - B안은 사용자의 감성, 라이프스타일, 감동적인 변화에 초점
-            - C안은 실제 사용법, 문제 해결, 활용 사례를 구체적으로 보여줌
-            
-            각 기획안은 서로 다른 장면 흐름, 메시지, 톤앤매너가 드러나도록 창의적이고 구체적으로 작성해주세요.
-            """, userPrompt);
+            - 모든 필드에 구체적인 내용 작성
+            - placeholder 문구 금지
+            - 실제 제작 가능한 상세 내용 포함
+            - 프로젝트의 핵심 요소를 반영
+            """, userPrompt, projectPurpose, duration, ratio, style);
         
-        try {
-            String response = callOpenAI(systemPrompt, fullUserPrompt);
-            log.info("OpenAI plan generation success: {}", response);
-            return response;
-        } catch (Exception e) {
-            log.warn("OpenAI plan generation failed, using fallback: {}", e.getMessage());
-            return createFallbackPlan(userPrompt);
-        }
+        return callOpenAI(systemPrompt, fullUserPrompt);
     }
     
     private String createFallbackPlan(String userPrompt) {

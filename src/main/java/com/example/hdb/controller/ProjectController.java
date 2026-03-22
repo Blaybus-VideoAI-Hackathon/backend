@@ -2,10 +2,13 @@ package com.example.hdb.controller;
 
 import com.example.hdb.dto.request.PlanCreateRequest;
 import com.example.hdb.dto.request.PlanSelectRequest;
+import com.example.hdb.dto.request.PlanningGenerateRequest;
 import com.example.hdb.dto.response.ApiResponse;
 import com.example.hdb.dto.response.ProjectPlanResponse;
-import com.example.hdb.dto.response.ProjectPlanResponseV2;
+import com.example.hdb.dto.response.ProjectPlanResponseV3;
 import com.example.hdb.dto.response.PlanSelectResponse;
+import com.example.hdb.dto.response.PlanningGenerateResponse;
+import com.example.hdb.dto.response.PlanningSummaryResponse;
 import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.entity.ProjectPlan;
 import com.example.hdb.entity.ProjectStatus;
@@ -99,21 +102,21 @@ public class ProjectController extends BaseController {
         return ResponseEntity.ok(ApiResponse.success(ProjectResponse.from(project)));
     }
 
-    @Operation(summary = "기획 생성", description = "프로젝트를 기반으로 3가지 기획안을 생성합니다.")
+    @Operation(summary = "기획 생성", description = "사용자의 아이디어를 바탕으로 3개의 차별화된 기획안을 생성합니다.")
     @PostMapping("/{projectId}/plans")
-    public ResponseEntity<ApiResponse<ProjectPlanResponseV2>> createPlan(
+    public ResponseEntity<ApiResponse<ProjectPlanResponseV3>> createPlan(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
             @Valid @RequestBody PlanCreateRequest request,
             Authentication authentication) {
         
         String loginId = resolveLoginId(authentication);
-        log.info("기획 생성 요청 - 사용자: {}, 프로젝트: {}, 프롬프트: {}", 
-                loginId, projectId, request.getUserPrompt());
+        log.info("기획 생성 요청 - 사용자: {}, 프로젝트: {}, 아이디어: {}", loginId, projectId, request.getUserPrompt());
         
+        // 기획 생성 서비스 호출
         var plan = planningService.createPlan(loginId, projectId, request);
         
-        // 기획 응답 변환 (V2 구조)
-        ProjectPlanResponseV2 response = convertToPlanResponseV2(plan);
+        // 응답 변환
+        var response = convertToPlanResponseV3(plan);
         
         return ResponseEntity.ok(ApiResponse.success(response));
     }
@@ -151,8 +154,8 @@ public class ProjectController extends BaseController {
         // 선택된 기획안 정보 조회
         Optional<ProjectPlan> latestPlan = planningService.getLatestPlan(projectId);
         if (latestPlan.isPresent()) {
-            ProjectPlanResponseV2 planResponse = convertToPlanResponseV2(latestPlan.get());
-            ProjectPlanResponseV2.Plan selectedPlan = planResponse.getPlans().stream()
+            ProjectPlanResponseV3 planResponse = convertToPlanResponseV3(latestPlan.get());
+            ProjectPlanResponseV3.Plan selectedPlan = planResponse.getPlans().stream()
                     .filter(plan -> planId.equals(plan.getPlanId()))
                     .findFirst()
                     .orElse(planResponse.getPlans().get(0)); // fallback
@@ -169,24 +172,53 @@ public class ProjectController extends BaseController {
         throw new RuntimeException("기획안을 찾을 수 없습니다.");
     }
 
-    private ProjectPlanResponseV2 convertToPlanResponseV2(ProjectPlan plan) {
+    @Operation(summary = "프로젝트 기획 생성", description = "사용자 프롬프트를 기반으로 실제 LLM을 호출하여 기획을 생성하고 핵심요소와 기획안을 한 번에 반환합니다.")
+    @PostMapping("/{projectId}/planning/generate")
+    public ResponseEntity<ApiResponse<PlanningGenerateResponse>> generatePlanning(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            @Valid @RequestBody PlanningGenerateRequest request,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("기획 생성 - 사용자: {}, 프로젝트: {}, 프롬프트: {}", loginId, projectId, request.getUserPrompt());
+        
+        // 기획 생성 서비스 호출
+        var planning = planningService.generatePlanning(projectId, request.getUserPrompt(), loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success("기획 생성 성공", planning));
+    }
+
+    @Operation(summary = "프로젝트 기획 요약 조회", description = "선택된 기획안 기준의 핵심 요소와 스토리라인을 한 번에 조회합니다.")
+    @GetMapping("/{projectId}/planning-summary")
+    public ResponseEntity<ApiResponse<PlanningSummaryResponse>> getPlanningSummary(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("기획 요약 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
+        
+        // 기획 요약 서비스 호출
+        var summary = planningService.getPlanningSummary(projectId);
+        
+        return ResponseEntity.ok(ApiResponse.success(summary));
+    }
+
+    private ProjectPlanResponseV3 convertToPlanResponseV3(ProjectPlan plan) {
         try {
             String planData = plan.getPlanData();
-            log.info("=== Converting Plan Data V2 ===");
+            log.info("=== Converting Plan Data V3 ===");
             log.info("Plan ID: {}", plan.getId());
             log.info("Stored plan_data JSON: {}", planData);
             
-            // ProjectPlanResponseV2.fromJson() 사용하여 역직렬화
-            ProjectPlanResponseV2 response = ProjectPlanResponseV2.fromJson(planData);
+            // ProjectPlanResponseV3.fromJson() 사용하여 역직렬화
+            ProjectPlanResponseV3 response = ProjectPlanResponseV3.fromJson(planData);
             
-            log.info("Converted plan response V2 - plans count: {}", 
-                    response.getPlans() != null ? response.getPlans().size() : 0);
-            
+            log.info("Converted plans count: {}", response.getPlans() != null ? response.getPlans().size() : 0);
             return response;
             
         } catch (Exception e) {
-            log.error("Failed to convert plan to V2 response, using fallback", e);
-            return ProjectPlanResponseV2.createFallbackResponse();
+            log.error("Failed to convert plan to V3 response", e);
+            throw new RuntimeException("기획 데이터 변환에 실패했습니다.", e);
         }
     }
 

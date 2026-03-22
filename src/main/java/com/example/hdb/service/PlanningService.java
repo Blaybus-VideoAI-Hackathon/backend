@@ -2,6 +2,7 @@ package com.example.hdb.service;
 
 import com.example.hdb.dto.openai.PlanGenerationResponse;
 import com.example.hdb.dto.request.PlanCreateRequest;
+import com.example.hdb.dto.response.PlanningGenerateResponse;
 import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.entity.ProjectPlan;
 import com.example.hdb.entity.ProjectStatus;
@@ -10,7 +11,10 @@ import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectPlanRepository;
 import com.example.hdb.repository.ProjectRepository;
 import com.example.hdb.repository.UserRepository;
+import com.example.hdb.dto.response.PlanningSummaryResponse;
 import com.example.hdb.util.JsonUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +39,78 @@ public class PlanningService {
     private final OpenAIService openAIService;
     
     /**
+     * 프로젝트 기획 생성 (실제 LLM 호출)
+     */
+    public PlanningGenerateResponse generatePlanning(Long projectId, String userPrompt, String loginId) {
+        log.info("=== Planning Generation Started ===");
+        log.info("Project ID: {}", projectId);
+        log.info("User Prompt: {}", userPrompt);
+        log.info("Login ID: {}", loginId);
+        
+        // 프로젝트 정보 조회
+        var project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        log.info("Project found - Purpose: {}, Duration: {}, Ratio: {}, Style: {}", 
+                project.getPurpose(), project.getDuration(), project.getRatio(), project.getStyle());
+        
+        try {
+            // OpenAI로 기획 생성
+            String aiResponse = openAIService.generatePlanningWithSummary(
+                    userPrompt, 
+                    project.getPurpose(), 
+                    project.getDuration(), 
+                    project.getRatio(), 
+                    project.getStyle()
+            );
+            log.info("OpenAI 기획 생성 응답 수신: {}", aiResponse);
+            
+            // JSON 추출 및 파싱
+            String json = JsonUtils.extractJsonSafely(aiResponse);
+            log.info("추출된 JSON: {}", json);
+            
+            // OpenAI 응답을 PlanningGenerateResponse로 파싱
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(json);
+            
+            JsonNode summaryNode = root.get("planningSummary");
+            JsonNode plansNode = root.get("plans");
+            
+            if (summaryNode == null || plansNode == null) {
+                log.error("Invalid JSON structure - missing planningSummary or plans");
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+            
+            // planningSummary 파싱
+            PlanningGenerateResponse.PlanningSummary summary = mapper.treeToValue(
+                summaryNode, PlanningGenerateResponse.PlanningSummary.class
+            );
+            
+            // plans 파싱
+            List<PlanningGenerateResponse.Plan> plans = mapper.convertValue(
+                plansNode, new TypeReference<List<PlanningGenerateResponse.Plan>>() {}
+            );
+            
+            // 선택된 기획안이 없으므로 null로 설정
+            Integer selectedPlanId = project.getSelectedPlanId();
+            
+            log.info("Successfully parsed AI response - plans count: {}, selectedPlanId: {}", 
+                    plans.size(), selectedPlanId);
+            
+            return PlanningGenerateResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(selectedPlanId)  // 선택된 기획안 없으면 null
+                    .planningSummary(summary)
+                    .plans(plans)
+                    .build();
+            
+        } catch (Exception e) {
+            log.error("기획 생성 실패", e);
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+        }
+    }
+
+    /**
      * 사용자가 선택한 기획안을 프로젝트의 최종 선택 기획안으로 저장
      */
     public void selectPlan(Long projectId, Integer selectedPlanId) {
@@ -56,9 +132,120 @@ public class PlanningService {
             throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
         }
         
-        // TODO: Project 엔티티에 selectedPlanId 필드 추가 필요
-        // 현재는 로그만 남기고 실제 저장은 추후 구현
+        // 프로젝트 조회
+        var project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        // 선택된 기획안 저장
+        project.setSelectedPlanId(selectedPlanId);
+        projectRepository.save(project);
+        
         log.info("Plan selection completed - Project: {}, SelectedPlan: {}", projectId, selectedPlanId);
+    }
+
+    /**
+     * 프로젝트 기획 요약 조회 (선택된 기획안 기준)
+     */
+    public PlanningSummaryResponse getPlanningSummary(Long projectId) {
+        log.info("=== Planning Summary Started ===");
+        log.info("Project ID: {}", projectId);
+        
+        // 프로젝트 조회
+        var project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        
+        // 최신 기획안 조회
+        Optional<ProjectPlan> latestPlan = getLatestPlan(projectId);
+        if (latestPlan.isEmpty()) {
+            // 기획안이 없으면 프로젝트 기본 정보만 반환
+            return PlanningSummaryResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(null)
+                    .selectedPlanTitle(null)
+                    .purpose(project.getPurpose())
+                    .duration(project.getDuration())
+                    .ratio(project.getRatio())
+                    .style(project.getStyle())
+                    .mainCharacter(null)
+                    .subCharacters(null)
+                    .backgroundWorld(null)
+                    .storyFlow(null)
+                    .storyLine(null)
+                    .build();
+        }
+        
+        // 선택된 기획안 ID 확인
+        Integer selectedPlanId = project.getSelectedPlanId();
+        if (selectedPlanId == null) {
+            // 선택된 기획안이 없으면 1안 기준으로 반환
+            selectedPlanId = 1;
+            log.info("No selected plan found, using default plan 1");
+        }
+        
+        log.info("Using selected plan ID: {}", selectedPlanId);
+        
+        try {
+            // 기획안 데이터 파싱
+            String planData = latestPlan.get().getPlanData();
+            log.info("Parsing plan data for summary: {}", planData);
+            
+            String json = JsonUtils.extractJsonSafely(planData);
+            ObjectMapper mapper = new ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode plansJson = mapper.readTree(json);
+            com.fasterxml.jackson.databind.JsonNode plansArray = plansJson.get("plans");
+            
+            if (plansArray != null && plansArray.isArray() && plansArray.size() > 0) {
+                // 선택된 기획안 찾기 (selectedPlanId 기준)
+                com.fasterxml.jackson.databind.JsonNode selectedPlanJson = plansArray.get(selectedPlanId - 1);
+                
+                if (selectedPlanJson != null) {
+                    com.fasterxml.jackson.databind.JsonNode coreElements = selectedPlanJson.get("coreElements");
+                    
+                    PlanningSummaryResponse response = PlanningSummaryResponse.builder()
+                            .projectId(projectId)
+                            .selectedPlanId(selectedPlanId)
+                            .selectedPlanTitle(selectedPlanJson.get("title").asText())
+                            .purpose(project.getPurpose())  // 프로젝트 공통 정보
+                            .duration(project.getDuration())  // 프로젝트 공통 정보
+                            .ratio(project.getRatio())  // 프로젝트 공통 정보
+                            .style(project.getStyle())  // 프로젝트 공통 정보
+                            .mainCharacter(coreElements != null ? coreElements.get("mainCharacter").asText() : null)
+                            .subCharacters(coreElements != null && coreElements.get("subCharacters").isArray() ? 
+                                    mapper.convertValue(coreElements.get("subCharacters"), List.class) : null)
+                            .backgroundWorld(coreElements != null ? coreElements.get("backgroundWorld").asText() : null)
+                            .storyFlow(coreElements != null ? coreElements.get("storyFlow").asText() : null)
+                            .storyLine(coreElements != null ? coreElements.get("storyLine").asText() : null)
+                            .build();
+                    
+                    log.info("Planning summary generated successfully - using selected plan: {}", selectedPlanId);
+                    return response;
+                }
+            }
+            
+            // 파싱 실패 시 기본 응답
+            return createDefaultPlanningSummary(projectId, project);
+            
+        } catch (Exception e) {
+            log.error("Failed to generate planning summary", e);
+            return createDefaultPlanningSummary(projectId, project);
+        }
+    }
+    
+    private PlanningSummaryResponse createDefaultPlanningSummary(Long projectId, com.example.hdb.entity.Project project) {
+        return PlanningSummaryResponse.builder()
+                .projectId(projectId)
+                .selectedPlanId(null)
+                .selectedPlanTitle(null)
+                .purpose(project.getPurpose())
+                .duration(project.getDuration())
+                .ratio(project.getRatio())
+                .style(project.getStyle())
+                .mainCharacter(null)
+                .subCharacters(null)
+                .backgroundWorld(null)
+                .storyFlow(null)
+                .storyLine(null)
+                .build();
     }
 
     public ProjectPlan createPlan(String loginId, Long projectId, PlanCreateRequest request) {
@@ -78,12 +265,20 @@ public class PlanningService {
                 .max()
                 .orElse(0) + 1;
 
-        // OpenAI로 기획 생성
+        // OpenAI로 기획 생성 (프로젝트 정보 전달)
         log.info("OpenAI 기획 생성 시작 - 사용자 입력: {}", request.getUserPrompt());
+        log.info("프로젝트 정보 - 목적: {}, 길이: {}초, 비율: {}, 스타일: {}", 
+                project.getPurpose(), project.getDuration(), project.getRatio(), project.getStyle());
         
         try {
-            // OpenAI 호출
-            String aiResponse = openAIService.generatePlan(request.getUserPrompt());
+            // OpenAI 호출 (프로젝트 정보 전달)
+            String aiResponse = openAIService.generatePlan(
+                    request.getUserPrompt(), 
+                    project.getPurpose(), 
+                    project.getDuration(), 
+                    project.getRatio(), 
+                    project.getStyle()
+            );
             log.info("OpenAI 응답 수신: {}", aiResponse);
             
             // JSON 추출

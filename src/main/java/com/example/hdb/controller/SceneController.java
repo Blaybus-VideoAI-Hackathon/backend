@@ -8,6 +8,8 @@ import com.example.hdb.dto.request.SceneEditRequest;
 import com.example.hdb.dto.request.SceneGenerateRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
 import com.example.hdb.dto.response.SceneDesignResponse;
+import com.example.hdb.dto.response.SceneGenerationResponse;
+import com.example.hdb.dto.response.SceneGenerationResponse.SceneSummaryDto;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.service.SceneService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -81,40 +83,25 @@ public class SceneController extends BaseController {
     
     // ========== 신규 API (Scene 기능 확장) ==========
     
-    @Operation(summary = "씬 자동 생성", description = "프로젝트 기획 기반으로 씬을 자동 생성합니다.")
+    @Operation(summary = "씬 자동 생성", description = "선택된 기획안 기반으로 씬을 자동 생성합니다.")
     @PostMapping("/projects/{projectId}/scenes/generate")
-    public ResponseEntity<ApiResponse<List<SceneResponse>>> generateScenes(
+    public ResponseEntity<ApiResponse<List<SceneSummaryDto>>> generateScenes(
             @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = false) @Valid SceneGenerateRequest request,
+            @Valid @RequestBody SceneGenerateRequest request,
             Authentication authentication) {
         
         log.info("=== Scene Generation Started ===");
         log.info("Project ID: {}", projectId);
-        log.info("Request object: {}", request);
-        log.info("Request null: {}", request == null);
+        log.info("Selected Plan ID: {}", request.getSelectedPlanId());
         
-        // sceneGenerationRequest가 null 또는 empty일 경우 기본값 처리
-        String sceneGenerationRequest;
-        if (request == null || request.getSceneGenerationRequest() == null || request.getSceneGenerationRequest().trim().isEmpty()) {
-            sceneGenerationRequest = "프로젝트 기획을 기반으로 씬을 생성해주세요";
-            log.info("Using default sceneGenerationRequest: {}", sceneGenerationRequest);
-        } else {
-            sceneGenerationRequest = request.getSceneGenerationRequest();
-            log.info("Using provided sceneGenerationRequest: {}", sceneGenerationRequest);
-        }
+        // Scene 생성 서비스 호출 (summary만 반환)
+        List<SceneSummaryDto> scenes = sceneService.generateScenes(
+                projectId, 
+                request.getSelectedPlanId(),
+                resolveLoginId(authentication)
+        );
         
-        // selectedPlanId 처리
-        String selectedPlanId = null;
-        if (request != null && request.getSelectedPlanId() != null && !request.getSelectedPlanId().trim().isEmpty()) {
-            selectedPlanId = request.getSelectedPlanId();
-            log.info("Using provided selectedPlanId: {}", selectedPlanId);
-        } else {
-            log.info("No selectedPlanId provided, will use default (A)");
-        }
-        
-        List<SceneResponse> scenes = sceneService.generateScenes(projectId, selectedPlanId, sceneGenerationRequest);
-        
-        return ResponseEntity.ok(ApiResponse.success("씬 자동 생성 성공", scenes));
+        return ResponseEntity.ok(ApiResponse.success("씬 생성 완료", scenes));
     }
     
     @Operation(summary = "씬 설계", description = "특정 씬에 대해 optional_elements, image_prompt, video_prompt를 생성합니다.")

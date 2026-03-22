@@ -6,6 +6,8 @@ import com.example.hdb.dto.request.SceneDesignRequest;
 import com.example.hdb.dto.request.SceneEditRequest;
 import com.example.hdb.dto.request.SceneGenerateRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
+import com.example.hdb.dto.response.SceneGenerationResponse;
+import com.example.hdb.dto.response.SceneGenerationResponse.SceneSummaryDto;
 import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 
@@ -23,8 +25,8 @@ public interface SceneService {
     List<SceneResponse> getScenesByProjectId(Long projectId);
     
     // ========== 신규 메서드 (Scene 기능 확장) ==========
-    // 프로젝트 기획 기반으로 Scene 자동 생성
-    List<SceneResponse> generateScenes(Long projectId, String selectedPlanId, String sceneGenerationRequest);
+    // 프로젝트 기획 기반으로 Scene 자동 생성 (summary만 반환)
+    List<SceneSummaryDto> generateScenes(Long projectId, Integer selectedPlanId, String loginId);
     
     // 특정 Scene 설계 (optional_elements, image_prompt, video_prompt 생성)
     SceneResponse designScene(Long projectId, Long sceneId, String loginId, SceneDesignRequest request);

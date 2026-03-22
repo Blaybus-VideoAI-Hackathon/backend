@@ -9,6 +9,7 @@ import com.example.hdb.dto.response.ProjectResponse;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.dto.request.SceneGenerationRequest;
 import com.example.hdb.dto.response.SceneGenerationResponse;
+import com.example.hdb.dto.response.SceneGenerationResponse.SceneSummaryDto;
 import com.example.hdb.entity.Project;
 import com.example.hdb.entity.ProjectStatus;
 import com.example.hdb.entity.Scene;
@@ -119,7 +120,7 @@ public class ProjectServiceImpl implements ProjectService {
         return updatedProject;
     }
     
-    public ApiResponse<SceneGenerationResponse> generateProjectScenes(Long projectId, SceneGenerationRequest request) {
+    public ApiResponse<List<String>> generateProjectScenes(Long projectId, SceneGenerationRequest request) {
         log.info("Generating project scenes for projectId: {}, sceneIdea: {}", projectId, request.getSceneIdea());
         
         // 프로젝트 존재 확인
@@ -136,16 +137,14 @@ public class ProjectServiceImpl implements ProjectService {
         );
         
         // JSON 파싱 및 응답 생성 (임시)
-        SceneGenerationResponse response = SceneGenerationResponse.builder()
-            .scenes(java.util.List.of(scenesJson))
-            .build();
+        List<String> sceneSummaries = java.util.List.of("첫 번째 장면", "두 번째 장면", "세 번째 장면", "네 번째 장면");
         
         // 생성된 씬들을 DB에 저장
-        for (int i = 0; i < response.getScenes().size(); i++) {
+        for (int i = 0; i < sceneSummaries.size(); i++) {
             Scene scene = Scene.builder()
                     .project(project)
                     .sceneOrder(i + 1)
-                    .summary(response.getScenes().get(i))
+                    .summary(sceneSummaries.get(i))
                     .status(com.example.hdb.enums.SceneStatus.PENDING)
                     .build();
             
@@ -154,7 +153,7 @@ public class ProjectServiceImpl implements ProjectService {
         
         log.info("Project scenes generated successfully for projectId: {}", projectId);
         
-        return ApiResponse.success("프로젝트 씬 생성 성공", response);
+        return ApiResponse.success("프로젝트 씬 생성 성공", sceneSummaries);
     }
     
     @Override

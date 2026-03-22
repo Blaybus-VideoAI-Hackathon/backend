@@ -6,10 +6,12 @@ import com.example.hdb.dto.request.SceneDesignRequest;
 import com.example.hdb.dto.request.SceneEditRequest;
 import com.example.hdb.dto.request.SceneGenerationRequest;
 import com.example.hdb.dto.request.SceneUpdateRequest;
+import com.example.hdb.dto.openai.SceneGenerationResponse;
+import com.example.hdb.dto.openai.SceneGenerationResponse.SceneData;
 import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.dto.response.SceneResponse;
 import com.example.hdb.dto.common.OptionalElements;
-import com.example.hdb.dto.openai.SceneGenerationResponse;
+import com.example.hdb.dto.response.SceneGenerationResponse.SceneSummaryDto;
 import com.example.hdb.dto.response.ProjectPlanResponse;
 import com.example.hdb.entity.Project;
 import com.example.hdb.entity.ProjectPlan;
@@ -144,11 +146,11 @@ public class SceneServiceImpl implements SceneService {
     // ========== 신규 메서드 (Scene 기능 확장) ==========
     
     @Override
-    public List<SceneResponse> generateScenes(Long projectId, String selectedPlanId, String sceneGenerationRequest) {
+    public List<SceneSummaryDto> generateScenes(Long projectId, Integer selectedPlanId, String loginId) {
         log.info("=== Scene Generation Started ===");
         log.info("Project ID: {}", projectId);
         log.info("Selected Plan ID: {}", selectedPlanId);
-        log.info("Scene Generation Request: {}", sceneGenerationRequest);
+        log.info("Login ID: {}", loginId);
         
         // 프로젝트 존재 확인
         Project project = projectRepository.findById(projectId)
@@ -165,19 +167,19 @@ public class SceneServiceImpl implements SceneService {
         
         try {
             // 기획 정보 추출 (선택된 기획안 반영)
-            String coreElements = extractCoreElementsForSceneGeneration(project, selectedPlanId);
+            String coreElements = extractCoreElementsForSceneGeneration(project, selectedPlanId.toString());
             log.info("=== Scene Generation Plan Info ===");
             log.info("Selected Plan ID: {}", selectedPlanId);
             log.info("Extracted coreElements for scene generation: {}", coreElements);
             
-            // OpenAI로 씬 생성
-            log.info("OpenAI 호출 - projectTitle: {}, coreElements: {}, request: {}", 
-                    project.getTitle(), coreElements, sceneGenerationRequest);
+            // OpenAI로 씬 생성 (기본 요청 사용)
+            log.info("OpenAI 호출 - projectTitle: {}, coreElements: {}", 
+                    project.getTitle(), coreElements);
             
             String aiResponse = openAIService.generateScenesFromProject(
                     project.getTitle(), 
                     coreElements, 
-                    sceneGenerationRequest
+                    "프로젝트 기획을 기반으로 씬을 생성해주세요"
             );
             log.info("OpenAI 씬 생성 응답 수신: {}", aiResponse);
             
@@ -186,11 +188,11 @@ public class SceneServiceImpl implements SceneService {
             log.info("추출된 JSON: {}", json);
             
             // JSON 파싱
-            SceneGenerationResponse sceneResponse = objectMapper.readValue(json, SceneGenerationResponse.class);
+            com.example.hdb.dto.openai.SceneGenerationResponse sceneResponse = objectMapper.readValue(json, com.example.hdb.dto.openai.SceneGenerationResponse.class);
             log.info("씬 파싱 완료 - 생성된 씬 수: {}", sceneResponse.getScenes().size());
             
             // 방어 코드: 씬 개수 제한 (2~5개)
-            List<SceneGenerationResponse.SceneData> scenes = sceneResponse.getScenes();
+            List<SceneData> scenes = sceneResponse.getScenes();
             if (scenes.size() > 5) {
                 log.warn("GPT가 5개 초과 씬 생성: {}개 -> 5개로 제한", scenes.size());
                 scenes = scenes.subList(0, 5);
@@ -217,19 +219,18 @@ public class SceneServiceImpl implements SceneService {
             
             log.info("Generated {} scenes for projectId: {}", savedScenes.size(), projectId);
             
+            // Scene 생성 단계에서는 summary만 반환
             return savedScenes.stream()
-                    .map(scene -> {
-                        // Service 레이어에서 JSON 파싱 수행
-                        OptionalElements optionalElementsObj = parseOptionalElements(scene.getOptionalElements());
-                        // 대표 URL 계산
-                        String imageUrl = getRepresentativeImageUrl(scene.getId());
-                        String videoUrl = getRepresentativeVideoUrl(scene.getId());
-                        return SceneResponse.from(scene, optionalElementsObj, imageUrl, videoUrl);
-                    })
+                    .map(scene -> SceneSummaryDto.builder()
+                            .id(scene.getId())
+                            .sceneOrder(scene.getSceneOrder())
+                            .summary(scene.getSummary())
+                            .status(scene.getStatus().name())
+                            .build())
                     .collect(Collectors.toList());
             
         } catch (Exception e) {
-            log.error("씬 생성 실패 - fallback 실행. 원본 요청: {}", sceneGenerationRequest, e);
+            log.error("씬 생성 실패 - fallback 실행", e);
             
             // fallback: 프로젝트 정보 기반 기본 scene 2개 생성
             String projectTitle = project.getTitle();
@@ -261,14 +262,14 @@ public class SceneServiceImpl implements SceneService {
             
             log.info("Fallback 씬 생성 완료 - {}개 저장", savedScenes.size());
             
+            // fallback에서도 summary만 반환
             return savedScenes.stream()
-                    .map(scene -> {
-                        OptionalElements optionalElementsObj = parseOptionalElements(scene.getOptionalElements());
-                        // 대표 URL 계산
-                        String imageUrl = getRepresentativeImageUrl(scene.getId());
-                        String videoUrl = getRepresentativeVideoUrl(scene.getId());
-                        return SceneResponse.from(scene, optionalElementsObj, imageUrl, videoUrl);
-                    })
+                    .map(scene -> SceneSummaryDto.builder()
+                            .id(scene.getId())
+                            .sceneOrder(scene.getSceneOrder())
+                            .summary(scene.getSummary())
+                            .status(scene.getStatus().name())
+                            .build())
                     .collect(Collectors.toList());
         }
     }

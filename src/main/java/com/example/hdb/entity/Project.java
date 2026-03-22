@@ -45,6 +45,9 @@ public class Project extends BaseTimeEntity {
     @Column(columnDefinition = "TEXT")
     private String coreElements;
     
+    @Column
+    private Integer selectedPlanId;
+    
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PlanningStatus planningStatus;
