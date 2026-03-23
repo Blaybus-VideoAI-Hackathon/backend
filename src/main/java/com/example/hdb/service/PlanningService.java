@@ -555,7 +555,7 @@ public class PlanningService {
         
         try {
             // OpenAI 호출 (프로젝트 정보 전달)
-            String aiResponse = openAIService.generatePlan(
+            String aiResponse = openAIService.generatePlanningWithSummary(
                     request.getUserPrompt(), 
                     project.getPurpose(), 
                     project.getDuration(), 

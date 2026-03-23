@@ -116,17 +116,19 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                     scene.getVideoPrompt(), savedVideo.getId(), finalVideoUrl);
         }
         
-        return SceneVideoResponse.builder()
-                .id(savedVideo.getId())
-                .sceneId(savedVideo.getScene().getId())
-                .videoUrl(savedVideo.getVideoUrl())
-                .videoPrompt(savedVideo.getVideoPrompt())
-                .duration(savedVideo.getDuration())
-                .status(savedVideo.getStatus().name())
-                .statusDescription(savedVideo.getStatus().getDescription())
-                .createdAt(savedVideo.getCreatedAt())
-                .updatedAt(savedVideo.getUpdatedAt())
-                .build();
+        return new SceneVideoResponse(
+                savedVideo.getId(),
+                savedVideo.getScene().getId(),
+                null, // sceneOrder는 별도로 설정 필요
+                savedVideo.getDuration(),
+                savedVideo.getVideoUrl(),
+                savedVideo.getVideoPrompt(),
+                savedVideo.getStatus().name(),
+                savedVideo.getStatus().getDescription(),
+                false, // representative는 별도로 설정 필요
+                savedVideo.getCreatedAt(),
+                savedVideo.getUpdatedAt()
+        );
     }
     
     @Async("videoGenerationExecutor")
@@ -230,26 +232,53 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
         }
         
-        // 프로젝트 내 모든 씬의 영상 조회
+        // 프로젝트 내 모든 씬 조회
         List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
+        log.info("Found {} scenes for project: {}", scenes.size(), projectId);
         
         // 각 씬의 영상을 모두 수집
         List<SceneVideo> allVideos = scenes.stream()
                 .flatMap(scene -> sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(scene.getId()).stream())
                 .collect(Collectors.toList());
         
-        return allVideos.stream()
-                .map(video -> SceneVideoResponse.builder()
-                        .id(video.getId())
-                        .sceneId(video.getScene().getId())
-                        .duration(video.getDuration())
-                        .videoUrl(video.getVideoUrl())
-                        .videoPrompt(video.getVideoPrompt())
-                        .status(video.getStatus().name())
-                        .statusDescription(video.getStatus().getDescription())
-                        .createdAt(video.getCreatedAt())
-                        .build())
+        log.info("Found {} total videos for project: {}", allVideos.size(), projectId);
+        
+        // scene별로 그룹화하여 대표 영상만 포함
+        List<SceneVideoResponse> videoResponses = scenes.stream()
+                .map(scene -> {
+                    // 해당 씬의 영상들 중 최신 영상 찾기
+                    List<SceneVideo> sceneVideos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(scene.getId());
+                    
+                    if (sceneVideos.isEmpty()) {
+                        log.info("No videos found for scene: {}", scene.getId());
+                        return null;
+                    }
+                    
+                    SceneVideo latestVideo = sceneVideos.get(0); // 최신 영상
+                    boolean isRepresentative = scene.getSceneOrder() == 1; // 첫 번째 씬을 대표 영상으로 설정
+                    
+                    log.info("Scene {} - videoUrl: {}, status: {}, representative: {}", 
+                            scene.getId(), latestVideo.getVideoUrl(), latestVideo.getStatus(), isRepresentative);
+                    
+                    return new SceneVideoResponse(
+                            latestVideo.getId(),
+                            scene.getId(),
+                            scene.getSceneOrder(),
+                            latestVideo.getDuration(),
+                            latestVideo.getVideoUrl(),
+                            latestVideo.getVideoPrompt(),
+                            latestVideo.getStatus().name(),
+                            latestVideo.getStatus().getDescription(),
+                            isRepresentative,
+                            latestVideo.getCreatedAt(),
+                            latestVideo.getUpdatedAt()
+                    );
+                })
+                .filter(videoResponse -> videoResponse != null && videoResponse.getVideoUrl() != null && !videoResponse.getVideoUrl().trim().isEmpty())
                 .collect(Collectors.toList());
+        
+        log.info("Returning {} video responses for project: {}", videoResponses.size(), projectId);
+        return videoResponses;
     }
     
     /**
@@ -313,17 +342,19 @@ public class SceneVideoServiceImpl implements SceneVideoService {
      * Scene 엔티티를 SceneVideoResponse로 변환
      */
     private SceneVideoResponse convertToResponse(SceneVideo sceneVideo) {
-        return SceneVideoResponse.builder()
-                .id(sceneVideo.getId())
-                .sceneId(sceneVideo.getScene().getId())
-                .videoUrl(sceneVideo.getVideoUrl())
-                .videoPrompt(sceneVideo.getVideoPrompt())
-                .duration(sceneVideo.getDuration())
-                .status(sceneVideo.getStatus().name())
-                .statusDescription(sceneVideo.getStatus().getDescription())
-                .createdAt(sceneVideo.getCreatedAt())
-                .updatedAt(sceneVideo.getUpdatedAt())
-                .build();
+        return new SceneVideoResponse(
+                sceneVideo.getId(),
+                sceneVideo.getScene().getId(),
+                null, // sceneOrder는 별도로 설정 필요
+                sceneVideo.getDuration(),
+                sceneVideo.getVideoUrl(),
+                sceneVideo.getVideoPrompt(),
+                sceneVideo.getStatus().name(),
+                sceneVideo.getStatus().getDescription(),
+                false, // representative는 별도로 설정 필요
+                sceneVideo.getCreatedAt(),
+                sceneVideo.getUpdatedAt()
+        );
     }
     
     /**

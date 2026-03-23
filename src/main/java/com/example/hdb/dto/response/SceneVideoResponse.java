@@ -13,11 +13,13 @@ public class SceneVideoResponse {
     
     private Long id;
     private Long sceneId;
+    private Integer sceneOrder;
     private Integer duration;
     private String videoUrl;
     private String videoPrompt;
     private String status;
     private String statusDescription;
+    private Boolean representative;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

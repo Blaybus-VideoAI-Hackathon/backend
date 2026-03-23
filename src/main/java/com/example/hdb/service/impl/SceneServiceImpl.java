@@ -176,10 +176,9 @@ public class SceneServiceImpl implements SceneService {
             log.info("OpenAI 호출 - projectTitle: {}, coreElements: {}", 
                     project.getTitle(), coreElements);
             
-            String aiResponse = openAIService.generateScenesFromProject(
+            String aiResponse = openAIService.generateScenes(
                     project.getTitle(), 
-                    coreElements, 
-                    "프로젝트 기획을 기반으로 씬을 생성해주세요"
+                    5 // 기본 씬 개수
             );
             log.info("OpenAI 씬 생성 응답 수신: {}", aiResponse);
             
