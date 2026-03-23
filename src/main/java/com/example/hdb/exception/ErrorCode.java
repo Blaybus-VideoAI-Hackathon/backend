@@ -9,6 +9,10 @@ public enum ErrorCode {
     PROJECT_NOT_FOUND("PROJECT_001", "프로젝트를 찾을 수 없습니다."),
     SCENE_ORDER_DUPLICATE("PROJECT_002", "씬 순서가 중복됩니다."),
     
+    // Plan 관련
+    PLAN_NOT_FOUND("PLAN_001", "기획을 찾을 수 없습니다."),
+    PLAN_DATA_CORRUPTED("PLAN_002", "기획 데이터가 손상되었습니다."),
+    
     // Scene 관련
     SCENE_NOT_FOUND("SCENE_001", "씬을 찾을 수 없습니다."),
     SCENE_IMAGE_PROMPT_NOT_FOUND("SCENE_002", "씬의 이미지 프롬프트를 찾을 수 없습니다."),

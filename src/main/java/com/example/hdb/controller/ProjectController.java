@@ -140,6 +140,21 @@ public class ProjectController extends BaseController {
         return ResponseEntity.ok(ApiResponse.success(responses));
     }
 
+    @Operation(summary = "최신 기획 조회", description = "기획 생성 시 받은 응답을 그대로 다시 조회합니다. DB에 저장된 원본 데이터를 사용합니다.")
+    @GetMapping("/{projectId}/plans/latest")
+    public ResponseEntity<ApiResponse<PlanningGenerateResponse>> getLatestPlanning(
+            @Parameter(description = "프로젝트 ID") @PathVariable Long projectId,
+            Authentication authentication) {
+        
+        String loginId = resolveLoginId(authentication);
+        log.info("최신 기획 조회 - 사용자: {}, 프로젝트: {}", loginId, projectId);
+        
+        // 최신 기획 생성 응답을 그대로 조회
+        var latestPlanning = planningService.getLatestPlanning(projectId, loginId);
+        
+        return ResponseEntity.ok(ApiResponse.success(latestPlanning));
+    }
+
     @Operation(summary = "기획안 선택", description = "사용자가 선택한 기획안을 프로젝트의 최종 선택 기획안으로 저장합니다.")
     @PostMapping("/{projectId}/plans/{planId}/select")
     public ResponseEntity<ApiResponse<PlanSelectResponse>> selectPlan(
