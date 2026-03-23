@@ -47,38 +47,29 @@ public class KlingTokenService {
         log.info("Generating new Kling token");
         
         try {
-            String tokenUrl = klingConfig.getBaseUrl() + "/v1/auth/token";
+            // Kling AI는 별도 토큰 발급 없이 API Key를 Bearer 토큰으로 직접 사용
+            // 참고: https://aimlapi.com/generate-video-with-kling-ai-api
+            String apiKey = klingConfig.getAccessKey();
             
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            
-            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            body.add("access_key", klingConfig.getAccessKey());
-            body.add("secret_key", klingConfig.getSecretKey());
-            
-            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-            
-            ResponseEntity<String> response = restTemplate.postForEntity(tokenUrl, request, String.class);
-            
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                // TODO: 실제 Kling API 응답 형식에 맞게 파싱 필요
-                // 현재는 가정: {"token": "jwt_token", "expires_in": 3600}
-                String token = extractTokenFromResponse(response.getBody());
-                
-                // 토큰 캐싱 (1시간 유효)
-                TokenInfo tokenInfo = new TokenInfo(token, LocalDateTime.now().plusHours(1));
-                tokenCache.put("kling_token", tokenInfo);
-                
-                log.info("Kling token generated successfully");
-                return "Bearer " + token;
-            } else {
-                log.error("Failed to generate Kling token. Status: {}, Body: {}", 
-                        response.getStatusCode(), response.getBody());
-                throw new RuntimeException("Kling token generation failed");
+            if (apiKey == null || apiKey.trim().isEmpty()) {
+                log.error("Kling API key is null or empty");
+                throw new RuntimeException("Kling API key not configured");
             }
+            
+            log.info("Using Kling API key: {}", apiKey.substring(0, Math.min(10, apiKey.length())) + "...");
+            
+            // 토큰 캐싱 (1시간 유효)
+            TokenInfo tokenInfo = new TokenInfo(apiKey, LocalDateTime.now().plusHours(1));
+            tokenCache.put("kling_token", tokenInfo);
+            
+            log.info("Kling token generated successfully (using API key as Bearer token)");
+            return "Bearer " + apiKey;
             
         } catch (Exception e) {
             log.error("Error generating Kling token", e);
+            log.error("Kling config - baseUrl: {}, accessKey: {}", 
+                    klingConfig.getBaseUrl(), 
+                    klingConfig.getAccessKey() != null ? klingConfig.getAccessKey().substring(0, Math.min(5, klingConfig.getAccessKey().length())) + "..." : "null");
             throw new RuntimeException("Failed to generate Kling token", e);
         }
     }

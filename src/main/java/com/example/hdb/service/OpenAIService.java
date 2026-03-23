@@ -1,16 +1,18 @@
 package com.example.hdb.service;
 
+import com.example.hdb.dto.common.OptionalElements;
 import com.example.hdb.dto.openai.OpenAIRequest;
 import com.example.hdb.dto.openai.OpenAIResponse;
 import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
+import com.example.hdb.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -18,912 +20,570 @@ import org.springframework.web.client.RestTemplate;
 import java.util.List;
 
 @Service
+@Slf4j
 @ConditionalOnProperty(name = "openai.api-key", matchIfMissing = false)
 public class OpenAIService {
-    
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAIService.class);
-    
+
     private final RestTemplate openAiRestTemplate;
     private final String openaiApiUrl;
     private final String openAiApiKey;
     private final ObjectMapper objectMapper;
-    
-    public OpenAIService(@Qualifier("openAiRestTemplate") RestTemplate openAiRestTemplate, 
-                                   @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl,
-                                   @Value("${openai.api-key}") String openAiApiKey,
-                                   ObjectMapper objectMapper) {
+
+    public OpenAIService(
+            @Qualifier("openAiRestTemplate") RestTemplate openAiRestTemplate,
+            @Value("${openai.api.url:https://api.openai.com/v1}") String openaiApiUrl,
+            @Value("${openai.api-key}") String openAiApiKey,
+            ObjectMapper objectMapper
+    ) {
         this.openAiRestTemplate = openAiRestTemplate;
         this.openaiApiUrl = openaiApiUrl;
         this.openAiApiKey = openAiApiKey;
         this.objectMapper = objectMapper;
     }
-    
-    public String generateIdea(String coreElements, String style, String ratio) {
-        String systemPrompt = "당신은 창의적인 비디오 콘텐츠 기획자입니다. 사용자의 핵심 요소를 바탕으로 흥미로운 비디오 아이디어를 생성해주세요.";
-        
-        String userPrompt = String.format("""
-            다음 정보를 바탕으로 짧은 비디오 콘텐츠 아이디어를 생성해주세요:
-            
-            핵심 요소: %s
-            스타일: %s
-            화면 비율: %s
-            
-            응답은 JSON 형식으로 다음과 같이 제공해주세요:
-            {
-              "idea": "생성된 아이디어"
-            }
-            """, coreElements, style, ratio);
-        
-        return callOpenAI(systemPrompt, userPrompt);
-    }
-    
-    public String generateScenes(String idea, int sceneCount) {
-        String systemPrompt = "당신은 비디오 콘텐츠 구성 전문가입니다. 아이디어를 바탕으로 구체적인 씬(장면) 목록을 생성해주세요.";
-        
-        String userPrompt = String.format("""
-            다음 비디오 아이디어를 바탕으로 %d개의 씬(장면)을 생성해주세요:
-            
-            아이디어: %s
-            
-            각 씬은 다음 형식의 JSON 배열로 제공해주세요:
-            [
-              {
-                "sceneOrder": 1,
-                "summary": "씬 요약",
-                "optionalElements": "선택적 요소",
-                "imagePrompt": "이미지 생성 프롬프트",
-                "videoPrompt": "비디오 생성 프롬프트"
-              },
-              ...
-            ]
-            """, idea, sceneCount);
-        
-        return callOpenAI(systemPrompt, userPrompt);
-    }
-    
-    // ========== 신규 메서드 (C단계 GPT 연동) ==========
-    
-    /**
-     * 씬 부가요소 생성을 위한 OpenAI 호출
-     */
-    public String generateSceneOptionalElements(String sceneSummary, String sceneGoal, String emotionBeat, String overallStoryLine, String projectCore) {
-        String systemPrompt = """
-            당신은 전문 영상 연출가입니다. 특정 씬의 정보와 전체 스토리라인을 바탕으로 구체적인 부가요소를 생성해주세요.
-            
-            씬 정보:
-            - 씬 요약: %s
-            - 씬 목표: %s
-            - 감성 비트: %s
-            
-            전체 스토리라인: %s
-            
-            프로젝트 핵심요소: %s
-            
-            생성 요구사항:
-            1. 이 씬이 전체 스토리에서 가지는 역할을 반영
-            2. 감성 비트에 맞는 연출 요소 구체화
-            3. 실제 제작 가능한 수준의 상세한 요소
-            4. 모든 필드에 구체적인 내용 작성, placeholder 금지
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "action": "구체적인 액션 설명",
-              "pose": "구체적인 포즈 설명",
-              "camera": "카메라 앵글 (예: 미디엄 샷, 클로즈업)",
-              "cameraMotion": "카메라 움직임 (예: 천천히 줌 인, 패닝)",
-              "lighting": "조명 상세 설명",
-              "mood": "장면의 분위기",
-              "timeOfDay": "시간대",
-              "effects": ["효과1", "효과2"],
-              "backgroundCharacters": ["배경 캐릭터1", "배경 캐릭터2"],
-              "environmentDetail": "환경 디테일 상세 설명"
-            }
-            """.formatted(sceneSummary, sceneGoal, emotionBeat, overallStoryLine, projectCore);
-        
-        String userPrompt = String.format("""
-            위 씬 정보를 바탕으로 구체적인 부가요소를 생성해주세요.
-            
-            중요 포인트:
-            1. 이 씬의 목표(%s)와 감성 비트(%s)를 반영한 연출
-            2. 전체 스토리라인과의 일관성 유지
-            3. 실제 제작 시 참고할 수 있는 수준의 구체성
-            4. 시청자의 몰입을 높일 수 있는 디테일
-            
-            주의사항:
-            - 막연한 표현 금지 ("자연스러운 조명" → "따뜻한 실내 조명, 창문으로 들어오는 부드러운 햇빛")
-            - 모든 요소는 서로 연결되어야 함
-            - 감성 비트에 맞는 분위기 설정
-            """, sceneGoal, emotionBeat);
-        
-        return callOpenAI(systemPrompt, userPrompt);
-    }
 
-    /**
-     * 최종 프롬프트 생성을 위한 OpenAI 호출
-     */
-    public String generateFinalPrompts(String sceneSummary, String projectCore, String optionalElements) {
-        String systemPrompt = """
-            당신은 전문 AI 프롬프트 엔지니어입니다. 확정된 씬 정보를 바탕으로 이미지 생성 AI와 영상 생성 AI를 위한 최종 프롬프트를 생성해주세요.
-            
-            씬 요약: %s
-            
-            프로젝트 핵심요소: %s
-            
-            씬 부가요소: %s
-            
-            프롬프트 생성 요구사항:
-            1. 이미지 생성용 프롬프트: 정적인 이미지에 초점
-            2. 영상 생성용 프롬프트: 동적인 영상 연출에 초점
-            3. 모든 정보를 종합하여 완성된 하나의 장면 묘사
-            4. AI가 이해하기 쉬운 구체적이고 상세한 표현
-            5. 스타일, 분위기, 조명, 구도 등 모든 요소 포함
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "imagePrompt": "이미지 생성 AI를 위한 상세한 프롬프트. 스타일, 조명, 구도, 분위기, 캐릭터 표현, 배경 등 모든 요소를 포함한 완성된 문장.",
-              "videoPrompt": "영상 생성 AI를 위한 상세한 프롬프트. 카메라 움직임, 액션, 전환 효과, 시간 흐름 등 동적인 요소를 포함한 완성된 문장."
-            }
-            """.formatted(sceneSummary, projectCore, optionalElements);
-        
-        String userPrompt = """
-            위 정보를 바탕으로 이미지 생성과 영상 생성을 위한 최종 프롬프트를 생성해주세요.
-            
-            프롬프트 작성 가이드:
-            1. 이미지 프롬프트: 정적인 한 장면을 완벽하게 묘사
-            2. 영상 프롬프트: 동적인 흐름과 움직임을 묘사
-            3. 두 프롬프트 모두 동일한 장면을 묘사하지만 초점이 다름
-            4. 구체적인 수치와 표현 사용 (예: "따뜻한 색감" → "파스텔 톤의 따뜻한 분위기")
-            5. 전문가 수준의 상세한 묘사
-            
-            중요:
-            - 프롬프트는 실제 AI 서비스에서 바로 사용 가능한 완성된 문장
-            - 기술적 용어와 예술적 표현의 균형
-            - 시각적으로 명확한 이미지가 떠오르도록 작성
-            """;
-        
-        return callOpenAI(systemPrompt, userPrompt);
-    }
+    // ──────────────────────────────────────────
+    // 기획 생성
+    // ──────────────────────────────────────────
 
-    /**
-     * 프로젝트 기획 생성을 위한 OpenAI 호출 (planningSummary + plans)
-     */
-    public String generatePlanningWithSummary(String userPrompt, String projectPurpose, Integer duration, String ratio, String style) {
+    public String generatePlanningWithSummary(
+            String userPrompt,
+            String projectPurpose,
+            Integer duration,
+            String ratio,
+            String style
+    ) {
         String systemPrompt = """
-            당신은 전문 비디오 광고 기획가입니다. 사용자의 요청과 프로젝트 정보를 바탕으로 3개의 명확히 차별화된 기획안을 생성해주세요.
-            
-            프로젝트 정보:
-            - 목적: %s
-            - 길이: %d초
-            - 비율: %s
-            - 스타일: %s
-            
-            사용자 요청: %s
-            
-            중요 요구사항:
-            1. 3개 기획안은 전혀 다른 접근법이어야 함:
-               - 기획안 1: 감성 중심 스토리텔링
-               - 기획안 2: 액션/역동성 중심
-               - 기획안 3: 유머/반전 중심
-            
-            2. 각 기획안의 전체 스토리라인은 구체적이고 완성된 형태여야 함:
-               - 단순 요약이 아니라 실제 제작 가능한 수준
-               - 시작-전개-절정-결말의 명확한 구조
-               - 시청자의 흥미를 끌 수 있는 훅 포인트
-            
-            3. coreElements는 각 기획안의 특성을 명확히 반영:
-               - mainCharacter: 해당 기획안의 주인공
-               - backgroundWorld: 해당 기획안의 배경
-               - storyFlow: 해당 기획안의 전개 방식
-               - storyLine: 해당 기획안의 전체 스토리라인
-            
-            4. 프로젝트 공통 정보는 반드시 유지:
-               - purpose, duration, ratio, style은 프로젝트 정보 그대로 사용
-            
-            5. 구체적이고 실제적인 내용:
-               - "주요 인물", "배경 설정" 같은 placeholder 금지
-               - 각 기획안의 차이가 명확히 드러나도록 작성
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "plans": [
+                당신은 전문 숏폼 광고 기획자입니다.
+                사용자의 요청을 바탕으로 3개의 확실히 다른 기획안을 생성하세요.
+
+                중요한 규칙:
+                1. 사용자의 요청을 구체적으로 반영할 것
+                2. generic 표현 금지
+                   - "성장하는 주인공"
+                   - "조력자"
+                   - "현실적인 일상 공간"
+                   - "도전 과제"
+                   같은 표현 금지
+                3. 반드시 구체적인 캐릭터, 배경, 스토리라인 작성
+                4. 3개 기획안은 접근법이 분명히 달라야 함
+                   - 1안: 감성 중심
+                   - 2안: 액션/역동성 중심
+                   - 3안: 유머/반전 중심
+                5. 프로젝트 공통 정보는 반드시 그대로 유지
+                6. 반드시 JSON만 반환
+
+                형식:
                 {
-                  "planId": 1,
-                  "title": "기획안 제목",
-                  "focus": "기획안 초점 (예: 감성 중심)",
-                  "displayText": "기획안 상세 설명",
-                  "recommendationReason": "추천 이유",
-                  "strengths": ["강점1", "강점2"],
-                  "targetMood": "타겟 분위기",
-                  "targetUseCase": "타겟 사용 사례",
-                  "storyLine": "기획안의 전체 스토리라인 (구체적이고 완성된 형태)",
-                  "coreElements": {
-                    "purpose": "%s",
-                    "duration": %d,
-                    "ratio": "%s",
-                    "style": "%s",
-                    "mainCharacter": "해당 기획안의 구체적인 주요 캐릭터",
-                    "subCharacters": ["보조 캐릭터1", "보조 캐릭터2"],
-                    "backgroundWorld": "해당 기획안의 구체적인 배경 세계관",
-                    "storyFlow": "해당 기획안의 전체 스토리 흐름",
-                    "storyLine": "해당 기획안의 전체 스토리라인"
-                  }
-                },
-                {
-                  "planId": 2,
-                  "title": "두 번째 기획안 제목",
-                  "focus": "액션 중심",
-                  "displayText": "두 번째 기획안 상세 설명",
-                  "recommendationReason": "추천 이유",
-                  "strengths": ["강점1", "강점2"],
-                  "targetMood": "타겟 분위기",
-                  "targetUseCase": "타겟 사용 사례",
-                  "storyLine": "두 번째 기획안의 전체 스토리라인 (첫 번째와 완전히 다른 접근)",
-                  "coreElements": {
-                    "purpose": "%s",
-                    "duration": %d,
-                    "ratio": "%s",
-                    "style": "%s",
-                    "mainCharacter": "두 번째 기획안의 구체적인 주요 캐릭터",
-                    "subCharacters": ["보조 캐릭터1", "보조 캐릭터2"],
-                    "backgroundWorld": "두 번째 기획안의 구체적인 배경 세계관",
-                    "storyFlow": "두 번째 기획안의 전체 스토리 흐름",
-                    "storyLine": "두 번째 기획안의 전체 스토리라인"
-                  }
-                },
-                {
-                  "planId": 3,
-                  "title": "세 번째 기획안 제목",
-                  "focus": "유머/반전 중심",
-                  "displayText": "세 번째 기획안 상세 설명",
-                  "recommendationReason": "추천 이유",
-                  "strengths": ["강점1", "강점2"],
-                  "targetMood": "타겟 분위기",
-                  "targetUseCase": "타겟 사용 사례",
-                  "storyLine": "세 번째 기획안의 전체 스토리라인 (예상치 못한 반전 포함)",
-                  "coreElements": {
-                    "purpose": "%s",
-                    "duration": %d,
-                    "ratio": "%s",
-                    "style": "%s",
-                    "mainCharacter": "세 번째 기획안의 구체적인 주요 캐릭터",
-                    "subCharacters": ["보조 캐릭터1", "보조 캐릭터2"],
-                    "backgroundWorld": "세 번째 기획안의 구체적인 배경 세계관",
-                    "storyFlow": "세 번째 기획안의 전체 스토리 흐름",
-                    "storyLine": "세 번째 기획안의 전체 스토리라인"
-                  }
+                  "plans": [
+                    {
+                      "planId": 1,
+                      "title": "...",
+                      "focus": "...",
+                      "displayText": "...",
+                      "recommendationReason": "...",
+                      "strengths": ["...", "..."],
+                      "targetMood": "...",
+                      "targetUseCase": "...",
+                      "storyLine": "...",
+                      "coreElements": {
+                        "purpose": "...",
+                        "duration": 20,
+                        "ratio": "9:16",
+                        "style": "...",
+                        "mainCharacter": "...",
+                        "subCharacters": ["...", "..."],
+                        "backgroundWorld": "...",
+                        "storyFlow": "...",
+                        "storyLine": "..."
+                      }
+                    }
+                  ]
                 }
-              ]
-            }
-            """.formatted(projectPurpose, duration, ratio, style, userPrompt, projectPurpose, duration, ratio, style, projectPurpose, duration, ratio, style, projectPurpose, duration, ratio, style);
-        
+                """;
+
         String formattedUserPrompt = String.format("""
-            사용자 요청: "%s"
-            
-            위 요청을 바탕으로 3개의 완전히 다른 접근법의 기획안을 생성해주세요.
-            
-            각 기획안은 다음을 만족해야 합니다:
-            1. 전체 스토리라인이 명확하고 구체적일 것
-            2. 3개 기획안의 차이점이 명확할 것 (감성/액션/유머)
-            3. 실제 제작 가능한 수준의 상세한 내용을 포함할 것
-            4. 프로젝트 정보(%s, %d초, %s, %s)를 정확히 반영할 것
-            5. placeholder 없이 구체적인 캐릭터와 배경을 제시할 것
-            
-            특히 storyLine은 단순 요약이 아니라, 실제 영상으로 만들 수 있는 완성된 스토리여야 합니다.
-            """, userPrompt, projectPurpose, duration, ratio, style);
-        
+                사용자 요청:
+                %s
+
+                프로젝트 정보:
+                - purpose: %s
+                - duration: %d초
+                - ratio: %s
+                - style: %s
+
+                위 사용자 요청의 핵심 소재(캐릭터, 상황, 감성)를 반드시 실제 기획안에 반영하세요.
+                """, userPrompt, projectPurpose, duration, ratio, style);
+
         String response = callOpenAI(systemPrompt, formattedUserPrompt);
+
         log.info("=== Planning Generation Raw Response ===");
         log.info("User Prompt: {}", userPrompt);
         log.info("Project Info: purpose={}, duration={}, ratio={}, style={}", projectPurpose, duration, ratio, style);
         log.info("OpenAI Raw Response: {}", response);
-        
-        // 프롬프트 품질 검증 로그
-        if (response.contains("주요 인물") || response.contains("배경 설정")) {
-            log.warn("PLANNING QUALITY WARNING: Placeholder detected in response");
-        }
-        if (response.length() < 500) {
-            log.warn("PLANNING QUALITY WARNING: Response too short, may lack detail");
-        }
-        
+
         return response;
     }
 
-    /**
-     * 선택된 기획안 분석을 위한 OpenAI 호출
-     */
-    public String analyzeSelectedPlan(String storyLine, String projectPurpose, Integer duration, String ratio, String style) {
+    // ──────────────────────────────────────────
+    // 기획안 분석
+    // ──────────────────────────────────────────
+
+    public String analyzeSelectedPlan(
+            String storyLine,
+            String projectPurpose,
+            Integer duration,
+            String ratio,
+            String style
+    ) {
         String systemPrompt = """
-            당신은 전문 비디오 프로듀서입니다. 선택된 기획안의 전체 스토리라인을 분석하여 실제 제작 가능한 구조 데이터를 생성해주세요.
-            
-            분석 대상 스토리라인: %s
-            
-            분석 요구사항:
-            1. 전체 스토리라인을 자연스러운 씬으로 분할
-            2. 각 씬의 명확한 역할과 목표 정의
-            3. 감성 비트(emotion beat) 설정
-            4. 각 씬의 예상 소요 시간 계산
-            5. 프로젝트 핵심요소 추출 및 구체화
-            
-            중요:
-            - 씬 개수는 영상 길이(%d초)와 스토리 복잡성에 맞게 자동 결정
-            - 각 씬은 전체 스토리라인의 자연스러운 일부여야 함
-            - 단순한 나열이 아니라, 각 씬이 다음 씬으로 이어지는 흐름을 만들어야 함
-            - 모든 필드에 구체적인 내용 작성, placeholder 금지
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "projectCore": {
-                "purpose": "%s",
-                "duration": %d,
-                "ratio": "%s",
-                "style": "%s",
-                "mainCharacter": "스토리라인에서 추출한 구체적인 주요 캐릭터",
-                "subCharacters": ["보조 캐릭터1", "보조 캐릭터2"],
-                "backgroundWorld": "스토리라인에서 추출한 구체적인 배경 세계관",
-                "storyFlow": "전체 스토리의 자연스러운 흐름",
-                "storyLine": "%s"
-              },
-              "scenePlan": {
-                "recommendedSceneCount": 3,
-                "scenes": [
-                  {
-                    "sceneOrder": 1,
-                    "summary": "첫 번째 씬의 구체적인 내용",
-                    "sceneGoal": "이 씬의 목표",
-                    "emotionBeat": "이 씬의 감성 비트",
-                    "estimatedDuration": 5
+                당신은 전문 영상 프로듀서입니다.
+                선택된 기획안의 전체 스토리라인을 분석해서 제작 가능한 구조 데이터를 생성하세요.
+
+                규칙:
+                1. projectCore는 실제 스토리라인 기반으로 생성
+                2. scenePlan은 구체적인 장면 설명으로 생성
+                3. placeholder 금지
+                   - "분석된 주요 캐릭터"
+                   - "선택된 기획안의 스토리라인"
+                   - "분석된 첫 번째 장면"
+                   같은 표현 금지
+                4. 반드시 JSON만 반환
+
+                형식:
+                {
+                  "projectCore": {
+                    "purpose": "...",
+                    "duration": 20,
+                    "ratio": "9:16",
+                    "style": "...",
+                    "mainCharacter": "...",
+                    "subCharacters": ["...", "..."],
+                    "backgroundWorld": "...",
+                    "storyFlow": "...",
+                    "storyLine": "..."
                   },
-                  {
-                    "sceneOrder": 2,
-                    "summary": "두 번째 씬의 구체적인 내용",
-                    "sceneGoal": "이 씬의 목표",
-                    "emotionBeat": "이 씬의 감성 비트",
-                    "estimatedDuration": 8
-                  },
-                  {
-                    "sceneOrder": 3,
-                    "summary": "세 번째 씬의 구체적인 내용",
-                    "sceneGoal": "이 씬의 목표",
-                    "emotionBeat": "이 씬의 감성 비트",
-                    "estimatedDuration": 7
+                  "scenePlan": {
+                    "recommendedSceneCount": 3,
+                    "scenes": [
+                      {
+                        "sceneOrder": 1,
+                        "summary": "...",
+                        "sceneGoal": "...",
+                        "emotionBeat": "...",
+                        "estimatedDuration": 5
+                      }
+                    ]
                   }
-                ]
-              }
-            }
-            """.formatted(storyLine, duration, projectPurpose, duration, ratio, style, storyLine);
-        
+                }
+                """;
+
         String userPrompt = String.format("""
-            위 스토리라인을 분석하여 실제 제작 가능한 구조 데이터를 생성해주세요.
-            
-            분석 포인트:
-            1. 스토리라인을 자연스러운 씬으로 분할
-            2. 각 씬의 역할과 감성 흐름 설정
-            3. 전체 영상 길이(%d초)에 맞는 시간 배분
-            4. 프로젝트 정보(%s, %s, %s)와의 일관성
-            
-            주의사항:
-            - 각 씬은 독립적이면서도 전체 스토리의 일부여야 함
-            - 감성 비트는 시청자의 감정 흐름을 고려하여 설정
-            - 모든 내용은 구체적이고 실제 제작 가능해야 함
-            """, duration, projectPurpose, ratio, style);
-        
+                storyLine:
+                %s
+
+                프로젝트 정보:
+                - purpose: %s
+                - duration: %d초
+                - ratio: %s
+                - style: %s
+
+                위 스토리라인을 실제 장면으로 나눠 분석하세요.
+                """, storyLine, projectPurpose, duration, ratio, style);
+
         String response = callOpenAI(systemPrompt, userPrompt);
+
         log.info("=== Plan Analysis Raw Response ===");
         log.info("Input StoryLine: {}", storyLine);
-        log.info("Project Info: purpose={}, duration={}, ratio={}, style={}", projectPurpose, duration, ratio, style);
         log.info("OpenAI Raw Response: {}", response);
-        
-        // 분석 품질 검증 로그
-        if (!response.contains(storyLine.substring(0, Math.min(20, storyLine.length())))) {
-            log.warn("ANALYSIS QUALITY WARNING: StoryLine not properly reflected in analysis");
-        }
-        if (!response.contains("projectCore") || !response.contains("scenePlan")) {
-            log.warn("ANALYSIS QUALITY WARNING: Missing required JSON structure");
-        }
-        
+
         return response;
     }
-    
+
+    // ──────────────────────────────────────────
+    // 씬 설계
+    // ──────────────────────────────────────────
+
     /**
-     * 씬 부가요소 생성을 위한 OpenAI 호출
+     * 씬 설계: optionalElements의 effects는 LLM이 String으로 줄 수 있으므로
+     * 파싱은 SceneServiceImpl에서 안전하게 처리함.
+     * 여기서는 프롬프트에서 effects를 String으로 요청하여 LLM 혼란 방지.
      */
-    public String designScene(String sceneSummary, String designRequest) {
+    public String designScene(String sceneSummary, String projectCore, String designRequest) {
         String systemPrompt = """
-            당신은 비디오 씬 설계 전문가입니다. 기존 씬 정보와 사용자 요청을 바탕으로 씬을 구체적으로 설계해주세요.
-            
-            다음 요소들을 구체적으로 생성해주세요:
-            
-            - optionalElements: 씬의 상세 설계 요소
-              * action: 인물/제품의 구체적인 행동
-              * pose: 인물의 자세나 제품 각도
-              * camera: 촬영 각도, 움직임, 렌즈 종류
-              * cameraMotion: 카메라 움직임 (패닝, 틸트, 달리, 크랩 등)
-              * lighting: 조명 상태와 분위기
-              * mood: 장면의 감정적 톤
-              * timeOfDay: 시간대와 분위기
-              * motion: 움직임의 종류와 속도
-              * effects: 특수 효과나 후처리
-              
-            - imagePrompt: 씬 설계를 바탕으로 한 상세 이미지 생성 프롬프트
-            - videoPrompt: 씬 설계를 바탕으로 한 상세 영상 생성 프롬프트
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "optionalElements": {
-                "action": "손가락으로 탭을 스와이프하며 화면이 밝아짐",
-                "pose": "45도 각도에서 제품을 들고 있는 자세",
-                "camera": "로우 앵글에서 시작하여 탭의 디테일을 보여주는 클로즈업",
-                "cameraMotion": "부드러운 패닝으로 탭의 측면을 따라 움직임",
-                "lighting": "백라이트로 제품 실루엣 강조, 점차 밝아지는 조명",
-                "mood": "신비롭고 고급스러운 분위기",
-                "timeOfDay": "실내, 인공 조명 환경",
-                "motion": "천천히, 부드럽게",
-                "effects": "미세한 렌즈 플레어 효과"
-              },
-              "imagePrompt": "어두운 배경에서 갤럭시탭 실루엣이 드러나는 고급스러운 제품 사진, 백라이트 효과, 미니멀리즘, 프리미엄 태블릿 디자인, 손가락 스와이프",
-              "videoPrompt": "어두운 배경에서 갤럭시탭이 천천히 드러나는 오프닝 시퀀스, 손가락 스와이프, 부드러운 카메라 움직임, 신비로운 분위기, 4K 고화질"
-            }
-            """;
-        
-        String fullUserPrompt = String.format("""
-            다음 정보를 바탕으로 씬을 구체적으로 설계해주세요:
-            
-            기존 씬 요약: %s
-            설계 요청: %s
-            
-            중요:
-            - optionalElements의 모든 필드를 최대한 구체적으로 채울 것
-            - imagePrompt와 videoPrompt는 씬 설계를 반영한 상세 프롬프트로 작성
-            - 실제 촬영 가능한 구체적인 내용으로 작성
-            """, sceneSummary, designRequest);
-        
-        String response = callOpenAI(systemPrompt, fullUserPrompt);
+                당신은 영상 씬 설계 전문가입니다.
+                입력된 씬 요약, 프로젝트 핵심 요소, 사용자 요청을 바탕으로
+                씬 설계 JSON을 생성하세요.
+
+                규칙:
+                1. action, camera, lighting, mood는 반드시 채울 것
+                2. generic 표현 금지
+                   - "기본 설계", "표준", "A standard scene..."
+                3. userDesignRequest를 실제 반영할 것
+                4. imagePrompt와 videoPrompt는 상세하게 작성
+                5. 반드시 JSON만 반환
+
+                주의: effects는 단순 문자열로 작성하세요. (배열 아님)
+
+                형식:
+                {
+                  "optionalElements": {
+                    "action": "...",
+                    "pose": "...",
+                    "camera": "...",
+                    "cameraMotion": "...",
+                    "lighting": "...",
+                    "mood": "...",
+                    "timeOfDay": "...",
+                    "effects": "soft glow, warm bokeh",
+                    "backgroundCharacters": "...",
+                    "environmentDetail": "..."
+                  },
+                  "imagePrompt": "...",
+                  "videoPrompt": "..."
+                }
+                """;
+
+        String userPrompt = String.format("""
+                sceneSummary: %s
+
+                projectCore:
+                %s
+
+                userDesignRequest:
+                %s
+                """, sceneSummary, projectCore, designRequest);
+
+        String response = callOpenAI(systemPrompt, userPrompt);
+
         log.info("=== Scene Design Raw Response ===");
         log.info("Scene Summary: {}", sceneSummary);
         log.info("Design Request: {}", designRequest);
         log.info("OpenAI Raw Response: {}", response);
-        
-        // 설계 품질 검증 로그
-        if (!response.contains("optionalElements") || !response.contains("imagePrompt")) {
-            log.warn("DESIGN QUALITY WARNING: Missing required JSON structure");
-        }
-        if (response.contains("placeholder") || response.contains("예시")) {
-            log.warn("DESIGN QUALITY WARNING: Placeholder detected in response");
-        }
-        
+
         return response;
     }
-    
-    /**
-     * Scene 수정을 위한 OpenAI 호출
-     */
-    public String editScene(String sceneSummary, String optionalElements, String imagePrompt, String videoPrompt, String editRequest) {
+
+    // ──────────────────────────────────────────
+    // 씬 수정
+    // ──────────────────────────────────────────
+
+    public String editScene(
+            String sceneSummary,
+            String optionalElements,
+            String imagePrompt,
+            String videoPrompt,
+            String editRequest
+    ) {
         String systemPrompt = """
-            당신은 비디오 씬 수정 전문가입니다. 기존 씬 정보와 사용자 수정 요청을 바탕으로 씬을 수정해주세요.
-            
-            반드시 JSON 형식으로 응답해주세요:
-            {
-              "optionalElements": {
-                "action": "행동",
-                "mood": "분위기",
-                "camera": "카메라 각도",
-                "lighting": "조명"
-              },
-              "imagePrompt": "이미지 생성 프롬프트",
-              "videoPrompt": "비디오 생성 프롬프트"
-            }
-            """;
-        
+                당신은 비디오 씬 수정 전문가입니다.
+                기존 씬 정보와 수정 요청을 반영한 새 설계 JSON을 생성하세요.
+
+                주의: effects는 단순 문자열로 작성하세요. (배열 아님)
+
+                반드시 JSON만 반환하세요.
+                형식:
+                {
+                  "optionalElements": {
+                    "action": "...",
+                    "pose": "...",
+                    "camera": "...",
+                    "cameraMotion": "...",
+                    "lighting": "...",
+                    "mood": "...",
+                    "timeOfDay": "...",
+                    "effects": "soft glow",
+                    "backgroundCharacters": "...",
+                    "environmentDetail": "..."
+                  },
+                  "imagePrompt": "...",
+                  "videoPrompt": "..."
+                }
+                """;
+
         String fullUserPrompt = String.format("""
-            다음 정보를 바탕으로 씬을 수정해주세요:
-            
-            기존 씬 요약: %s
-            기존 선택 요소: %s
-            기존 이미지 프롬프트: %s
-            기존 영상 프롬프트: %s
-            수정 요청: %s
-            
-            위 요청에 맞게 씬을 수정해주세요.
-            """, sceneSummary, optionalElements, imagePrompt, videoPrompt, editRequest);
-        
+                sceneSummary: %s
+                optionalElements: %s
+                imagePrompt: %s
+                videoPrompt: %s
+                editRequest: %s
+                """, sceneSummary, optionalElements, imagePrompt, videoPrompt, editRequest);
+
         return callOpenAI(systemPrompt, fullUserPrompt);
     }
-    
-    /**
-     * 이미지 생성을 위한 OpenAI 호출 (DALL-E)
-     */
-    public String generateImage(String prompt) {
-        log.info("Generating image with prompt: {}", prompt);
-        
-        try {
-            // 실제 OpenAI DALL-E API 호출
-            String requestJson = String.format("""
+
+    // ──────────────────────────────────────────
+    // 씬 목록 생성
+    // ──────────────────────────────────────────
+
+    public String generateScenes(String scenePlanJson, int sceneCount) {
+        String systemPrompt = """
+                당신은 영상 씬 구성 전문가입니다.
+                입력된 scenePlan을 바탕으로 실제 저장 가능한 씬 목록만 생성하세요.
+
+                규칙:
+                1. 입력된 scenePlan의 scenes를 그대로 활용
+                2. summary는 generic 표현 금지
+                3. "첫 번째 장면", "두 번째 장면" 같은 표현 금지
+                4. 반드시 JSON 배열만 반환
+
+                형식:
+                [
+                  {
+                    "sceneOrder": 1,
+                    "summary": "구체적인 장면 설명"
+                  }
+                ]
+                """;
+
+        String userPrompt = String.format("""
+                sceneCount: %d
+
+                scenePlan JSON:
+                %s
+                """, sceneCount, scenePlanJson);
+
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    // ──────────────────────────────────────────
+    // 최종 프롬프트 생성
+    // ──────────────────────────────────────────
+
+    public String generateFinalPrompts(String sceneSummary, String projectCore, String optionalElements) {
+        String systemPrompt = """
+                당신은 AI 이미지/영상 프롬프트 엔지니어입니다.
+                입력된 씬 요약, 프로젝트 핵심 정보, 연출 요소를 기반으로
+                imagePrompt와 videoPrompt를 생성하세요.
+
+                규칙:
+                1. imagePrompt는 정적인 장면 묘사
+                2. videoPrompt는 동적인 장면 묘사
+                3. "A standard scene" 같은 generic 문장 금지
+                4. null, N/A 같은 표현 금지
+                5. 반드시 JSON만 반환
+
+                형식:
                 {
-                  "model": "dall-e-3",
-                  "prompt": "%s",
-                  "n": 1,
-                  "size": "1024x1024",
-                  "response_format": "url"
+                  "imagePrompt": "...",
+                  "videoPrompt": "..."
                 }
-                """, prompt.replace("\"", "\\\""));
-            
-            // HTTP 헤더 설정
+                """;
+
+        String userPrompt = String.format("""
+                sceneSummary: %s
+
+                projectCore:
+                %s
+
+                optionalElements:
+                %s
+                """, sceneSummary, projectCore, optionalElements);
+
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    // ──────────────────────────────────────────
+    // 이미지 생성 (DALL-E 3)
+    // ──────────────────────────────────────────
+
+    public String generateImage(String prompt) {
+        log.info("=== Image Generation Started ===");
+        log.info("Image Prompt: {}", prompt);
+
+        try {
+            String safePrompt = prompt.replace("\"", "\\\"").replace("\n", " ").trim();
+
+            String requestJson = String.format("""
+                    {
+                      "model": "dall-e-3",
+                      "prompt": "%s",
+                      "n": 1,
+                      "size": "1024x1024",
+                      "response_format": "url"
+                    }
+                    """, safePrompt);
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", "Bearer " + openAiApiKey);
-            
+
             HttpEntity<String> requestEntity = new HttpEntity<>(requestJson, headers);
-            
-            // OpenAI API 호출
+
             ResponseEntity<String> response = openAiRestTemplate.postForEntity(
                     openaiApiUrl + "/images/generations",
                     requestEntity,
-                    String.class);
-            
+                    String.class
+            );
+
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 String responseBody = response.getBody();
                 log.info("OpenAI DALL-E response: {}", responseBody);
-                
-                // JSON 응답 파싱하여 이미지 URL 추출
-                // 응답 형식: {"data": [{"url": "https://oaidalleapiprodscus.blob.core.windows.net/..."}]}
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode responseJson = mapper.readTree(responseBody);
+
+                JsonNode responseJson = objectMapper.readTree(responseBody);
                 JsonNode dataNode = responseJson.get("data");
-                
+
                 if (dataNode != null && dataNode.isArray() && dataNode.size() > 0) {
-                    JsonNode firstImage = dataNode.get(0);
-                    JsonNode urlNode = firstImage.get("url");
-                    
-                    if (urlNode != null) {
+                    JsonNode urlNode = dataNode.get(0).get("url");
+                    if (urlNode != null && !urlNode.asText().isBlank()) {
                         String realImageUrl = urlNode.asText();
-                        log.info("REAL IMAGE GENERATED - prompt: {}, url: {}", prompt, realImageUrl);
+                        log.info("REAL IMAGE GENERATED - url: {}", realImageUrl);
                         return realImageUrl;
                     }
                 }
-                
-                log.error("Failed to parse image URL from OpenAI response");
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
-            } else {
-                log.error("OpenAI API returned status: {}", response.getStatusCode());
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
-            
-        } catch (Exception e) {
-            log.warn("OpenAI DALL-E API 실패, fallback으로 mock URL 생성: {}", e.getMessage());
-            
-            // Fallback: mock URL 생성
-            String timestamp = String.valueOf(System.currentTimeMillis());
-            String promptHash = String.valueOf(prompt.hashCode());
-            String fallbackImageUrl = String.format("https://picsum.photos/seed/%s_%s/1024/1024.jpg", 
-                    timestamp, promptHash);
-            
-            log.info("IMAGE FALLBACK USED - prompt: {}, fallbackUrl: {}", prompt, fallbackImageUrl);
-            return fallbackImageUrl;
-        }
-    }
-    
-    /**
-     * 영상 생성을 위한 OpenAI 호출 (Sora / Runway / Pika 등)
-     */
-    public String generateVideo(String prompt) {
-        log.info("Generating video with prompt: {}", prompt);
-        
-        try {
-            // 실제 OpenAI Sora API 호출 (준비 중)
-            // TODO: OpenAI Sora API가 공개되면 연동
-            // 현재는 Kling API 사용 가정
-            
-            String requestJson = String.format("""
-                {
-                  "model": "kling-v1",
-                  "prompt": "%s",
-                  "duration": 5,
-                  "aspect_ratio": "16:9"
-                }
-                """, prompt.replace("\"", "\\\""));
-            
-            // Kling API 호출 (실제 생성 서비스)
-            String timestamp = String.valueOf(System.currentTimeMillis());
-            String promptHash = String.valueOf(prompt.hashCode());
-            String realVideoUrl = String.format("https://kling-generated-videos.com/v1/%s_%s.mp4", 
-                    timestamp, promptHash);
-            
-            log.info("REAL VIDEO GENERATED - prompt: {}", prompt);
-            log.info("Kling video generated: {}", realVideoUrl);
-            return realVideoUrl;
-            
-        } catch (Exception e) {
-            log.warn("영상 생성 API 실패, fallback으로 mock URL 생성: {}", e.getMessage());
-            
-            // Fallback: mock URL 생성
-            String timestamp = String.valueOf(System.currentTimeMillis());
-            String promptHash = String.valueOf(prompt.hashCode());
-            String fallbackVideoUrl = String.format("https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4");
-            
-            log.info("VIDEO FALLBACK USED - prompt: {}, fallbackUrl: {}", prompt, fallbackVideoUrl);
-            return fallbackVideoUrl;
-        }
-    }
-    
-    public String generateSceneDesignWithVariation(String summary) {
-        String systemPrompt = "당신은 비디오 씬 설계 전문가입니다. 동일한 씬에 대해 다양한 버전의 설계를 제공해주세요.";
-        
-        String userPrompt = String.format("""
-            다음 씬 요약에 대해 새로운 버전의 설계를 생성해주세요:
-            
-            씬 요약: %s
-            
-            기존과 다른 버전으로 아래 요소들을 새롭게 구성해주세요:
-            - 행동 (action)
-            - 포즈 (pose)
-            - 구도/카메라 (camera)
-            - 조명 (lighting)
-            - 무드 (mood)
-            - 시간대 (timeOfDay)
-            
-            응답은 JSON 형식으로 다음과 같이 제공해주세요:
-            {
-              "displayText": "행동: 주요 인물이 장면을 탐색함\\n포즈: 자연스러운 입장 자세\\n구도: 중간 거리 쇼트\\n조명: 장면에 맞는 조명\\n무드: 호기심 또는 기대감\\n시간대: 상황에 적합한 시간",
-              "imagePrompt": "Character entering the scene with natural posture, medium shot, appropriate lighting, curious or expectant mood, suitable time of day",
-              "videoPrompt": "Scene showing character entering with natural movement, medium distance view, proper lighting, atmosphere matching the scene context"
-            }
-            """, summary);
-        
-        String jsonResponse = callOpenAI(systemPrompt, userPrompt);
-        
-        try {
-            // JSON 응답을 SceneDesignResponse로 파싱
-            SceneDesignResponse response = objectMapper.readValue(jsonResponse, SceneDesignResponse.class);
-            log.info("Successfully parsed scene design response: {}", response.getDisplayText());
-            return jsonResponse;
-        } catch (Exception e) {
-            log.error("Failed to parse scene design response: {}", jsonResponse, e);
-            // 파싱 실패 시 원본 JSON 반환
-            return jsonResponse;
-        }
-    }
-    
-    public String generateImageEditSuggestions(String userEditText, String currentImagePrompt) {
-        String systemPrompt = "당신은 이미지 편집 전문가입니다. 사용자의 자연어 요청을 구조화된 편집 파라미터로 변환해주세요.";
-        
-        String userPrompt = String.format("""
-            사용자가 다음과 같이 이미지 편집을 요청했습니다:
-            
-            사용자 요청: %s
-            현재 이미지 프롬프트: %s
-            
-            사용자 요청을 분석하여 아래 형식으로 편집 파라미터를 추천해주세요:
-            
-            1. 밝기 조절 요청: brightness 값 (0-100)
-            2. 톤/분위기 변경: tone 값 (warm, cool, neutral, vivid, soft)
-            3. 대비 조절: contrast 값 (-50 ~ +50)
-            4. 강조 대상: emphasis (person, background, object)
-            5. 수정된 프롬프트: updatedPrompt (이미지 재생성용)
-            
-            응답은 JSON 형식으로 제공해주세요:
-            {
-              "analysis": "사용자 요청 분석",
-              "editSuggestions": {
-                "brightness": 15,
-                "tone": "warm",
-                "contrast": 5,
-                "emphasis": "main_subject"
-              },
-              "updatedPrompt": "Main subject with warm lighting and enhanced brightness"
-            }
-            """, userEditText, currentImagePrompt);
-        
-        return callOpenAI(systemPrompt, userPrompt);
-    }
-    
-    private String callOpenAI(String systemPrompt, String userPrompt) {
-        try {
-            log.info("Calling OpenAI API - systemPrompt length: {}, userPrompt length: {}", 
-                    systemPrompt.length(), userPrompt.length());
-            log.debug("System prompt: {}", systemPrompt);
-            log.debug("User prompt: {}", userPrompt);
-            
-            // OpenAIRequest DTO 사용
-            OpenAIRequest request = OpenAIRequest.builder()
-                    .model("gpt-4o-mini")
-                    .messages(java.util.List.of(
-                        java.util.Map.of("role", "system", "content", systemPrompt),
-                        java.util.Map.of("role", "user", "content", userPrompt)
-                    ))
-                    .temperature(0.7)
-                    .max_tokens(2000)
-                    .build();
-            
-            log.info("OpenAI request prepared: model={}, messages={}", request.getModel(), request.getMessages().size());
-            
-            // HTTP 요청 설정
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(openAiApiKey);
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-            
-            // Authorization 헤더 형식 검증 로그
-            boolean isValidBearer = openAiApiKey != null && openAiApiKey.startsWith("Bearer ");
-            log.info("Authorization prefix valid: {}", isValidBearer);
-            
-            // API 키 마스킹 로그 (앞 10자만 노출)
-            String maskedKey = openAiApiKey != null && openAiApiKey.length() > 10 
-                ? "Bearer sk-" + "*".repeat(openAiApiKey.length() - 10) + openAiApiKey.substring(openAiApiKey.length() - 3)
-                : "INVALID_KEY";
-            log.info("Authorization preview: {}", maskedKey);
-            
-            // 요청 직전 로그
-            String requestJson = objectMapper.writeValueAsString(request);
-            String fullUrl = openaiApiUrl + "/chat/completions";
-            
-            log.info("OpenAI API Request Details:");
-            log.info("URL: {}", fullUrl);
-            log.info("Method: POST");
-            log.info("Content-Type: {}", headers.getContentType());
-            log.info("Accept: {}", headers.getAccept());
-            log.info("Authorization header exists: {}", headers.containsKey("Authorization"));
-            log.info("Body class: {}", request.getClass().getSimpleName());
-            log.info("Body JSON: {}", requestJson);
-            
-            // curl 재현용 로그
-            log.info("curl equivalent: curl -X POST {} -H 'Content-Type: application/json' -H 'Authorization: {}' -d '{}'", 
-                fullUrl, maskedKey, requestJson);
-            
-            // OpenAIRequest 객체 직접 전송 (이중 직렬화 방지)
-            HttpEntity<OpenAIRequest> entity = new HttpEntity<>(request, headers);
-            
-            // RestTemplate 설정 확인 로그
-            log.info("RestTemplate class: {}", openAiRestTemplate.getClass().getSimpleName());
-            log.info("RestTemplate interceptors: {}", openAiRestTemplate.getInterceptors().size());
-            
-            // API 호출
-            ResponseEntity<OpenAIResponse> response = openAiRestTemplate.exchange(
-                fullUrl,
-                HttpMethod.POST,
-                entity,
-                OpenAIResponse.class
-            );
-            
-            log.info("OpenAI API response status: {}", response.getStatusCode());
-            
-            // 응답 실패 시 상세 로그
-            if (!response.getStatusCode().is2xxSuccessful()) {
-                log.error("OpenAI API failed - Status: {}", response.getStatusCode());
-                log.error("Response Headers: {}", response.getHeaders());
-                
-                // Response body 상세 로그
-                String responseBody = "null body";
-                if (response.hasBody()) {
-                    Object body = response.getBody();
-                    if (body != null) {
-                        responseBody = body.toString();
-                        // 응답이 너무 길면 앞 500자만 로그
-                        if (responseBody.length() > 500) {
-                            responseBody = responseBody.substring(0, 500) + "... (truncated)";
-                        }
-                    }
-                }
-                log.error("Response Body: {}", responseBody);
-                
-                // Cloudflare HTML 응답 감지
-                if (responseBody.contains("<html>") && responseBody.contains("cloudflare")) {
-                    log.error("Detected Cloudflare HTML response - Possible DNS/Network issue");
-                }
-                
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
-            }
-            
-            // 응답 처리
-            OpenAIResponse openAIResponse = response.getBody();
-            
-            if (openAIResponse == null) {
-                log.error("OpenAI API returned null response body");
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
-            }
-            
-            log.info("OpenAI response ID: {}, Object: {}", openAIResponse.getId(), openAIResponse.getObject());
-            log.debug("OpenAI raw response: {}", openAIResponse);
-            
-            if (openAIResponse.getChoices() == null || openAIResponse.getChoices().isEmpty()) {
-                log.error("OpenAI API returned empty choices. Response: {}", openAIResponse);
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
-            }
-            
-            String content = openAIResponse.getChoices().get(0).getMessage().getContent();
-            
-            if (content == null || content.trim().isEmpty()) {
-                log.error("OpenAI API returned empty content. Response: {}", openAIResponse);
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
-            }
-            
-            log.info("OpenAI API call successful - content length: {}", content.length());
-            log.debug("OpenAI content: {}", content);
-            
-            return content.trim();
-            
+
+            throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+
         } catch (BusinessException e) {
-            // 이미 BusinessException이면 그대로 전파
-            log.error("BusinessException in OpenAI API call: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
-            log.error("Failed to call OpenAI API", e);
-            throw new BusinessException(ErrorCode.LLM_SERVICE_ERROR);
+            log.warn("OpenAI DALL-E 실패, fallback 이미지 사용: {}", e.getMessage());
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            String promptHash = String.valueOf(prompt.hashCode());
+            return String.format("https://fallback-image-service.com/generated/%s_%s.jpg", timestamp, promptHash);
         }
     }
-    
-    /**
-     * 규칙 기반 fallback 응답 생성
-     */
+
+    // ──────────────────────────────────────────
+    // 아이디어 생성 (보조)
+    // ──────────────────────────────────────────
+
+    public String generateIdea(String coreElements, String style, String ratio) {
+        String systemPrompt = """
+                당신은 창의적인 숏폼 영상 기획자입니다.
+                사용자의 핵심 요소를 바탕으로 영상 아이디어를 생성하세요.
+
+                반드시 JSON만 반환하세요.
+                형식:
+                {
+                  "idea": "생성된 아이디어"
+                }
+                """;
+
+        String userPrompt = String.format("""
+                핵심 요소: %s
+                스타일: %s
+                화면 비율: %s
+                """, coreElements, style, ratio);
+
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    // ──────────────────────────────────────────
+    // 씬 재설계 변형
+    // ──────────────────────────────────────────
+
+    public String generateSceneDesignWithVariation(String summary) {
+        String systemPrompt = """
+                당신은 비디오 씬 설계 전문가입니다.
+                동일한 씬에 대해 다른 연출 버전의 설계를 생성하세요.
+
+                반드시 JSON만 반환하세요.
+                형식:
+                {
+                  "displayText": "...",
+                  "imagePrompt": "...",
+                  "videoPrompt": "..."
+                }
+                """;
+
+        String userPrompt = String.format("""
+                씬 요약:
+                %s
+
+                다른 연출 버전을 생성하세요.
+                """, summary);
+
+        String jsonResponse = callOpenAI(systemPrompt, userPrompt);
+
+        try {
+            SceneDesignResponse response = objectMapper.readValue(
+                    JsonUtils.extractJsonSafely(jsonResponse),
+                    SceneDesignResponse.class
+            );
+            log.info("Successfully parsed scene design variation");
+            return objectMapper.writeValueAsString(response);
+        } catch (Exception e) {
+            log.error("Failed to parse scene design variation", e);
+            return jsonResponse;
+        }
+    }
+
+    // ──────────────────────────────────────────
+    // 이미지 편집 제안
+    // ──────────────────────────────────────────
+
+    public String generateImageEditSuggestions(String userEditText, String currentImagePrompt) {
+        String systemPrompt = """
+                당신은 이미지 편집 전문가입니다.
+                사용자의 편집 요청을 구조화된 JSON으로 변환하세요.
+
+                반드시 JSON만 반환하세요.
+                """;
+
+        String userPrompt = String.format("""
+                userEditText: %s
+                currentImagePrompt: %s
+                """, userEditText, currentImagePrompt);
+
+        return callOpenAI(systemPrompt, userPrompt);
+    }
+
+    // ──────────────────────────────────────────
+    // Fallback 메서드들 (OpenAI 호출 실패 시)
+    // ──────────────────────────────────────────
+
     public String generateFallbackResponse(String sceneSummary, String userRequest) {
         log.warn("OpenAI fallback rule-based response 사용");
-        
-        String mood = "감성적인 분위기";
-        String lighting = "자연스러운 기본 조명";
-        String camera = "아이레벨 구도";
-        String action = "장면 분위기에 맞게 자연스럽게 움직인다";
-        
-        // userRequest 소문자로 변환하여 키워드 검색
-        String lowerRequest = userRequest.toLowerCase();
-        
-        // 분위기/조명 키워드 처리
+
+        String mood = "warm cozy";
+        String lighting = "soft warm lighting";
+        String camera = "medium shot";
+        String action = "the hamster moves naturally through the scene";
+
+        String lowerRequest = userRequest == null ? "" : userRequest.toLowerCase();
+
         if (lowerRequest.contains("어둡") || lowerRequest.contains("밤") || lowerRequest.contains("차분")) {
-            mood = "차분하고 어두운 분위기";
-            lighting = "낮은 조도의 부드러운 조명";
+            mood = "calm dark mood";
+            lighting = "low key warm lighting";
         } else if (lowerRequest.contains("밝") || lowerRequest.contains("화사") || lowerRequest.contains("따뜻")) {
-            mood = "밝고 따뜻한 분위기";
-            lighting = "밝은 자연광과 따뜻한 톤";
-        } else if (lowerRequest.contains("노을") || lowerRequest.contains("석양")) {
-            lighting = "노을빛 역광";
-            mood = "감성적이고 따뜻한 분위기";
+            mood = "bright warm mood";
+            lighting = "bright warm natural lighting";
         }
-        
-        // 카메라 키워드 처리
-        if (lowerRequest.contains("뒤에서")) {
-            camera = "뒤에서 따라가는 구도";
-        } else if (lowerRequest.contains("위에서") || lowerRequest.contains("탑뷰")) {
-            camera = "위에서 내려다보는 구도";
-        } else if (lowerRequest.contains("아래에서")) {
-            camera = "아래에서 올려다보는 구도";
-        } else if (lowerRequest.contains("클로즈업")) {
-            camera = "클로즈업 구도";
-        } else if (lowerRequest.contains("옆에서")) {
-            camera = "측면 구도";
+
+        if (lowerRequest.contains("가깝") || lowerRequest.contains("클로즈")) {
+            camera = "close-up shot";
+        } else if (lowerRequest.contains("멀") || lowerRequest.contains("와이드")) {
+            camera = "wide shot";
         }
-        
-        // 행동 키워드 처리
-        if (lowerRequest.contains("걷")) {
-            action = "천천히 걸어간다";
-        } else if (lowerRequest.contains("웃")) {
-            action = "밝게 미소짓는다";
-        } else if (lowerRequest.contains("바라")) {
-            action = "주변을 바라본다";
+
+        if (lowerRequest.contains("옷") || lowerRequest.contains("변신")) {
+            action = "the hamster changes clothes and reacts excitedly";
         }
-        
-        // JSON 응답 생성
-        String jsonResponse = String.format("""
-            {
-              "mood": "%s",
-              "lighting": "%s",
-              "camera": "%s",
-              "action": "%s"
-            }
-            """, mood, lighting, camera, action);
-        
-        log.info("Generated fallback response: {}", jsonResponse);
-        return jsonResponse;
+
+        return String.format("""
+                {
+                  "action": "%s",
+                  "pose": "natural pose",
+                  "camera": "%s",
+                  "cameraMotion": "slow push in",
+                  "lighting": "%s",
+                  "mood": "%s",
+                  "timeOfDay": "afternoon",
+                  "effects": "soft glow",
+                  "backgroundCharacters": "",
+                  "environmentDetail": "%s"
+                }
+                """, action, camera, lighting, mood, sceneSummary != null ? sceneSummary : "");
     }
-    
-    /**
-     * 이미지 편집 제안 규칙 기반 fallback 응답 생성
-     */
+
     public String generateImageEditFallbackResponse(String userEditText, String imagePrompt) {
         log.warn("AI 이미지 편집 제안 fallback 사용");
-        
-        String lowerRequest = userEditText.toLowerCase();
+
+        String lowerRequest = userEditText == null ? "" : userEditText.toLowerCase();
         String editType = "none";
-        String suggestion = "기본 편집 제안";
-        
-        // 밝기 관련 키워드
+        String suggestion = "no-op";
+
         if (lowerRequest.contains("밝기") || lowerRequest.contains("밝게")) {
             editType = "brightness";
             suggestion = "brightness +15";
@@ -931,47 +591,83 @@ public class OpenAIService {
             editType = "brightness";
             suggestion = "brightness -15";
         }
-        
-        // 톤 관련 키워드
+
         if (lowerRequest.contains("따뜻") || lowerRequest.contains("웜톤")) {
-            if (!editType.equals("none")) {
-                editType = "combined";
-            } else {
-                editType = "tone";
-            }
-            suggestion = suggestion.equals("기본 편집 제안") ? "warm tone applied" : suggestion + ", warm tone applied";
+            suggestion = suggestion + ", warm tone";
         } else if (lowerRequest.contains("차갑") || lowerRequest.contains("쿨톤")) {
-            if (!editType.equals("none")) {
-                editType = "combined";
-            } else {
-                editType = "tone";
-            }
-            suggestion = suggestion.equals("기본 편집 제안") ? "cool tone applied" : suggestion + ", cool tone applied";
+            suggestion = suggestion + ", cool tone";
         }
-        
-        // 자르기 관련 키워드
-        if (lowerRequest.contains("자르") || lowerRequest.contains("크롭")) {
-            if (!editType.equals("none")) {
-                editType = "combined";
-            } else {
-                editType = "crop";
+
+        return String.format("""
+                {
+                  "editType": "%s",
+                  "suggestion": "%s",
+                  "editSuggestions": {
+                    "editType": "%s",
+                    "value": "%s"
+                  }
+                }
+                """, editType, suggestion, editType, suggestion);
+    }
+
+    // ──────────────────────────────────────────
+    // OpenAI API 공통 호출
+    // ──────────────────────────────────────────
+
+    private String callOpenAI(String systemPrompt, String userPrompt) {
+        try {
+            log.info("Calling OpenAI API - systemPrompt.length={}, userPrompt.length={}",
+                    systemPrompt.length(), userPrompt.length());
+
+            OpenAIRequest request = OpenAIRequest.builder()
+                    .model("gpt-4o-mini")
+                    .messages(List.of(
+                            java.util.Map.of("role", "system", "content", systemPrompt),
+                            java.util.Map.of("role", "user", "content", userPrompt)
+                    ))
+                    .temperature(0.7)
+                    .max_tokens(2000)
+                    .build();
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(openAiApiKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+
+            String fullUrl = openaiApiUrl + "/chat/completions";
+            log.info("OpenAI URL: {}", fullUrl);
+
+            HttpEntity<OpenAIRequest> entity = new HttpEntity<>(request, headers);
+
+            ResponseEntity<OpenAIResponse> response = openAiRestTemplate.exchange(
+                    fullUrl,
+                    HttpMethod.POST,
+                    entity,
+                    OpenAIResponse.class
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.error("OpenAI API failed - status: {}", response.getStatusCode());
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
             }
-            suggestion = suggestion.equals("기본 편집 제안") ? "center crop recommended" : suggestion + ", center crop recommended";
+
+            OpenAIResponse openAIResponse = response.getBody();
+            if (openAIResponse.getChoices() == null || openAIResponse.getChoices().isEmpty()) {
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+
+            String content = openAIResponse.getChoices().get(0).getMessage().getContent();
+            if (content == null || content.trim().isEmpty()) {
+                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+            }
+
+            return content.trim();
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to call OpenAI API", e);
+            throw new BusinessException(ErrorCode.LLM_SERVICE_ERROR);
         }
-        
-        // JSON 응답 생성
-        String jsonResponse = String.format("""
-            {
-              "editType": "%s",
-              "suggestion": "%s",
-              "editSuggestions": {
-                "editType": "%s",
-                "value": "%s"
-              }
-            }
-            """, editType, suggestion, editType, suggestion);
-        
-        log.info("Generated image edit fallback response: {}", jsonResponse);
-        return jsonResponse;
     }
 }

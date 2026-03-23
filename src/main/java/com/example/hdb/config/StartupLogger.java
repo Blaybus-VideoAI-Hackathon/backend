@@ -50,6 +50,20 @@ public class StartupLogger {
         logger.info("Datasource username present: {}", usernamePresent);
         logger.info("Datasource password present: {}", passwordPresent);
         
+        // 실제 datasource URL 확인
+        if (urlPresent) {
+            String maskedUrl = maskDatasourceUrl(datasourceUrl);
+            logger.info("Actual datasource URL: {}", maskedUrl);
+            
+            // H2 사용 여부 확인
+            boolean isH2 = datasourceUrl.contains("jdbc:h2:");
+            logger.info("Using H2 database: {}", isH2);
+            
+            // MySQL 사용 여부 확인
+            boolean isMySQL = datasourceUrl.contains("jdbc:mysql:");
+            logger.info("Using MySQL database: {}", isMySQL);
+        }
+        
         // JDBC direct connection test
         if (urlPresent && usernamePresent && passwordPresent) {
             testJdbcConnection();
@@ -58,6 +72,13 @@ public class StartupLogger {
         }
         
         logger.info("=====================================");
+    }
+    
+    private String maskDatasourceUrl(String url) {
+        if (url.contains("password=")) {
+            return url.replaceAll("password=[^&]*", "password=***");
+        }
+        return url;
     }
     
     private void testJdbcConnection() {

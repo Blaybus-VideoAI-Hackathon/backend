@@ -1,8 +1,8 @@
-# Render 배포용 설정 (Aiven MySQL) - DEPRECATED
-# prod 프로필로 통합됨. 현재는 prod 프로필 사용 권장
+# Render 배포용 설정 (Aiven MySQL)
+# Render 환경에서 사용하는 전용 프로필
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -29,8 +29,4 @@ logging:
     com.example.hdb: INFO
     org.springframework.web: DEBUG
     org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    org.springframework.boot.autoconfigure: DEBUG
-    org.springframework.jdbc.datasource: DEBUG
     com.zaxxer.hikari: DEBUG
-    org.hibernate.tool.schema.internal: DEBUG

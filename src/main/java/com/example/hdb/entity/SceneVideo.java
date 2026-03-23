@@ -48,7 +48,8 @@ public class SceneVideo extends BaseTimeEntity {
     public enum VideoStatus {
         GENERATING("생성 중"),
         COMPLETED("생성 완료"),
-        FAILED("실패");
+        FAILED("실패"),
+        FALLBACK("폴백 사용");
 
         private final String description;
 

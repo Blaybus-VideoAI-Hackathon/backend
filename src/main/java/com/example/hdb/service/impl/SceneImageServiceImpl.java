@@ -2,11 +2,10 @@ package com.example.hdb.service.impl;
 
 import com.example.hdb.dto.request.ImageEditCompleteRequest;
 import com.example.hdb.dto.request.SceneImageEditAiRequest;
-import com.example.hdb.dto.response.SceneImageEditAiResponse;
 import com.example.hdb.dto.response.SceneImageResponse;
+import com.example.hdb.entity.Project;
 import com.example.hdb.entity.Scene;
 import com.example.hdb.entity.SceneImage;
-import com.example.hdb.entity.Project;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
 import com.example.hdb.repository.ProjectRepository;
@@ -20,417 +19,328 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class SceneImageServiceImpl implements SceneImageService {
-    
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SceneImageServiceImpl.class);
-    
+
     private final SceneImageRepository sceneImageRepository;
     private final SceneRepository sceneRepository;
     private final ProjectRepository projectRepository;
     private final OpenAIService openAIService;
-    
+
     @Override
     public SceneImageResponse generateImage(Long projectId, Long sceneId, String loginId) {
         log.info("=== SceneImageService.generateImage Started ===");
-        log.info("projectId: {}", projectId);
-        log.info("sceneId: {}", sceneId);
-        log.info("loginId: {}", loginId);
-        
-        try {
-            // 권한 체크: scene이 해당 project에 속하는지 확인
-            log.info("Finding scene with sceneId: {}, projectId: {}", sceneId, projectId);
-            Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
-            
-            log.info("Scene found: {}", scene.getId());
-            log.info("Scene exists: {}", scene != null);
-            
-            // 권한 체크: project가 해당 사용자 소유인지 확인
-            String projectOwnerLoginId = scene.getProject().getUser().getLoginId();
-            log.info("Project owner loginId: {}", projectOwnerLoginId);
-            
-            if (!projectOwnerLoginId.equals(loginId)) {
-                log.error("Authorization failed: scene owner {} != request user {}", projectOwnerLoginId, loginId);
-                throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-            }
-            
-            // imagePrompt 확인
-            String imagePrompt = scene.getImagePrompt();
-            log.info("Scene imagePrompt: {}", imagePrompt);
-            log.info("imagePrompt is null: {}", imagePrompt == null);
-            log.info("imagePrompt is empty: {}", imagePrompt != null && imagePrompt.trim().isEmpty());
-            
-            if (imagePrompt == null || imagePrompt.trim().isEmpty()) {
-                log.error("Scene image prompt is null or empty");
-                throw new BusinessException(ErrorCode.SCENE_IMAGE_PROMPT_NOT_FOUND);
-            }
-            
-            // 이미지 번호 계산
-            log.info("Calculating next image number for sceneId: {}", sceneId);
-            Integer nextImageNumber = sceneImageRepository.findFirstBySceneIdOrderByImageNumberDesc(sceneId)
-                    .map(SceneImage::getImageNumber)
-                    .orElse(0) + 1;
-            
-            log.info("Next image number: {}", nextImageNumber);
-            
-            // 1. 생성 시작 시 SceneImage 저장 (GENERATING 상태)
-            log.info("Creating SceneImage with GENERATING status");
-            log.info("About to save SceneImage - sceneId: {}, imageNumber: {}, imagePrompt: {}, imageUrl: {}, status: {}", 
-                    scene.getId(), nextImageNumber, scene.getImagePrompt(), null, SceneImage.ImageStatus.GENERATING);
-            
-            SceneImage sceneImage = SceneImage.builder()
-                    .scene(scene)
-                    .imageNumber(nextImageNumber)
-                    .imageUrl(null)
-                    .imagePrompt(scene.getImagePrompt())
-                    .openaiImageId(null)
-                    .status(SceneImage.ImageStatus.GENERATING)
-                    .build();
-            
-            log.info("Saving initial SceneImage...");
-            SceneImage savedImage = sceneImageRepository.save(sceneImage);
-            log.info("SceneImage 생성 시작 저장 완료: {}", savedImage.getId());
-            
-            try {
-                // 2. OpenAI로 이미지 생성
-                log.info("Calling OpenAI to generate image with prompt: {}", scene.getImagePrompt());
-                String imageUrl = openAIService.generateImage(scene.getImagePrompt());
-                log.info("OpenAI 이미지 생성 완료: {}", imageUrl);
-                
-                // 3. OpenAI 성공 시 status = READY로 업데이트
-                savedImage.setImageUrl(imageUrl);
-                savedImage.setStatus(SceneImage.ImageStatus.READY);
-                SceneImage completedImage = sceneImageRepository.save(savedImage);
-                
-                log.info("REAL IMAGE GENERATED - prompt: {}, savedImageId: {}, savedImageUrl: {}", 
-                        scene.getImagePrompt(), completedImage.getId(), completedImage.getImageUrl());
-                
-                // Scene 대표 이미지 URL은 DB 저장 없이 조회 시 계산
-                
-                return SceneImageResponse.builder()
-                        .id(completedImage.getId())
-                        .sceneId(completedImage.getScene().getId())
-                        .imageNumber(completedImage.getImageNumber())
-                        .imageUrl(completedImage.getImageUrl())
-                        .editedImageUrl(completedImage.getEditedImageUrl())
-                        .imagePrompt(completedImage.getImagePrompt())
-                        .status(completedImage.getStatus().name())
-                        .statusDescription(completedImage.getStatus().getDescription())
-                        .createdAt(completedImage.getCreatedAt())
-                        .updatedAt(completedImage.getUpdatedAt())
-                        .build();
-                
-            } catch (Exception openaiException) {
-                log.error("=== IMAGE FALLBACK USED ===");
-                log.error("OpenAI 이미지 생성 실패: {}", openaiException.getMessage());
-                log.error("Scene ID: {}, Scene Order: {}", scene.getId(), scene.getSceneOrder());
-                log.error("Image Prompt: {}", scene.getImagePrompt());
-                
-                // 4. OpenAI 실패 시 fallback URL 생성
-                String fallbackImageUrl = generateFallbackImageUrl(scene.getImagePrompt());
-                savedImage.setImageUrl(fallbackImageUrl);
-                savedImage.setStatus(SceneImage.ImageStatus.READY);
-                SceneImage completedImage = sceneImageRepository.save(savedImage);
-                
-                log.error("IMAGE FALLBACK COMPLETED - fallbackUrl: {}, isPicsum: {}", 
-                        fallbackImageUrl, fallbackImageUrl.contains("picsum"));
-                
-                // fallback 여부를 응답에 포함
-                SceneImageResponse response = SceneImageResponse.builder()
-                        .id(completedImage.getId())
-                        .sceneId(completedImage.getScene().getId())
-                        .imageNumber(completedImage.getImageNumber())
-                        .imageUrl(completedImage.getImageUrl())
-                        .editedImageUrl(completedImage.getEditedImageUrl())
-                        .imagePrompt(completedImage.getImagePrompt())
-                        .status(completedImage.getStatus().name())
-                        .statusDescription(completedImage.getStatus().getDescription())
-                        .createdAt(completedImage.getCreatedAt())
-                        .updatedAt(completedImage.getUpdatedAt())
-                        .build();
-                
-                // fallback 플래그 추가 (프론트에서 확인 가능)
-                if (fallbackImageUrl.contains("picsum") || fallbackImageUrl.contains("fallback")) {
-                    response.setFallbackUsed(true);
-                }
-                
-                return response;
-            }
-            
-        } catch (Exception e) {
-            log.error("SceneImage generation failed", e);
-            
-            // 5. 예외 발생 시에도 SceneImage 저장 (FAILED 상태)
-            Integer fallbackImageNumber = sceneImageRepository.findFirstBySceneIdOrderByImageNumberDesc(sceneId)
-                    .map(SceneImage::getImageNumber)
-                    .orElse(0) + 1;
-            
-            // scene을 다시 조회해야 함
-            Scene fallbackScene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
-            
-            SceneImage fallbackImage = SceneImage.builder()
-                    .scene(fallbackScene)
-                    .imageNumber(fallbackImageNumber)
-                    .imageUrl(null)
-                    .imagePrompt(fallbackScene.getImagePrompt())
-                    .openaiImageId(null)
-                    .status(SceneImage.ImageStatus.FAILED)
-                    .build();
-            
-            SceneImage savedFallbackImage = sceneImageRepository.save(fallbackImage);
-            log.info("Fallback SceneImage 저장 완료: {}", savedFallbackImage.getId());
-            
-            return SceneImageResponse.builder()
-                    .id(savedFallbackImage.getId())
-                    .imageNumber(savedFallbackImage.getImageNumber())
-                    .imageUrl(savedFallbackImage.getImageUrl())
-                    .imagePrompt(savedFallbackImage.getImagePrompt())
-                    .status(savedFallbackImage.getStatus().name())
-                    .statusDescription(savedFallbackImage.getStatus().getDescription())
-                    .createdAt(savedFallbackImage.getCreatedAt())
-                    .build();
-        }
-    }
-    
-    @Override
-    public List<SceneImageResponse> getImages(Long projectId, Long sceneId, String loginId) {
-        log.info("Getting images for scene: {}, project: {}, user: {}", sceneId, projectId, loginId);
-        
-        // 권한 체크
+        log.info("projectId: {}, sceneId: {}, loginId: {}", projectId, sceneId, loginId);
+
         Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
-        
-        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+
+        validateProjectOwnership(scene.getProject(), loginId);
+
+        String imagePrompt = buildRealImagePrompt(scene);
+        if (imagePrompt == null || imagePrompt.isBlank()) {
+            log.error("Scene image prompt is null or empty after normalization");
+            throw new BusinessException(ErrorCode.SCENE_IMAGE_PROMPT_NOT_FOUND);
         }
-        
+
+        Integer nextImageNumber = sceneImageRepository.findFirstBySceneIdOrderByImageNumberDesc(sceneId)
+                .map(SceneImage::getImageNumber)
+                .orElse(0) + 1;
+
+        log.info("Next image number: {}", nextImageNumber);
+        log.info("Final image prompt: {}", imagePrompt);
+
+        SceneImage sceneImage = SceneImage.builder()
+                .scene(scene)
+                .imageNumber(nextImageNumber)
+                .imageUrl(null)
+                .editedImageUrl(null)
+                .imagePrompt(imagePrompt)
+                .openaiImageId(null)
+                .status(SceneImage.ImageStatus.GENERATING)
+                .build();
+
+        SceneImage savedImage = sceneImageRepository.save(sceneImage);
+        log.info("SceneImage saved with GENERATING status: {}", savedImage.getId());
+
+        try {
+            log.info("=== CALLING OPENAI IMAGE API ===");
+            String imageUrl = openAIService.generateImage(imagePrompt);
+
+            if (imageUrl == null || imageUrl.isBlank()) {
+                throw new RuntimeException("AI returned empty imageUrl");
+            }
+
+            savedImage.setImageUrl(imageUrl);
+            savedImage.setStatus(SceneImage.ImageStatus.READY);
+            SceneImage completedImage = sceneImageRepository.save(savedImage);
+
+            log.info("REAL IMAGE GENERATED - sceneId: {}, imageId: {}, imageUrl: {}",
+                    sceneId, completedImage.getId(), completedImage.getImageUrl());
+
+            return toResponse(completedImage, false);
+
+        } catch (Exception e) {
+            log.error("=== IMAGE GENERATION FAILED, USING FALLBACK ===", e);
+
+            String fallbackImageUrl = generateFallbackImageUrl(imagePrompt);
+            savedImage.setImageUrl(fallbackImageUrl);
+            savedImage.setStatus(SceneImage.ImageStatus.READY);
+            SceneImage completedImage = sceneImageRepository.save(savedImage);
+
+            log.warn("IMAGE FALLBACK COMPLETED - sceneId: {}, imageId: {}, fallbackUrl: {}",
+                    sceneId, completedImage.getId(), completedImage.getImageUrl());
+
+            return toResponse(completedImage, true);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SceneImageResponse> getImages(Long projectId, Long sceneId, String loginId) {
+        log.info("Getting images for scene: {}, project: {}, user: {}", sceneId, projectId, loginId);
+
+        Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
+
+        validateProjectOwnership(scene.getProject(), loginId);
+
         List<SceneImage> images = sceneImageRepository.findBySceneIdOrderByImageNumberAsc(sceneId);
-        
+
         return images.stream()
-                .map(image -> SceneImageResponse.builder()
-                        .id(image.getId())
-                        .imageNumber(image.getImageNumber())
-                        .imageUrl(image.getImageUrl())
-                        .editedImageUrl(image.getEditedImageUrl())
-                        .imagePrompt(image.getImagePrompt())
-                        .status(image.getStatus().name())
-                        .statusDescription(image.getStatus().getDescription())
-                        .createdAt(image.getCreatedAt())
-                        .build())
+                .map(image -> toResponse(image, isFallbackUrl(image.getImageUrl())))
                 .collect(Collectors.toList());
     }
-    
+
     @Override
+    @Transactional(readOnly = true)
     public List<SceneImageResponse> getProjectImages(Long projectId, String loginId) {
         log.info("Getting all images for project: {}, user: {}", projectId, loginId);
-        
-        // 1. projectId 존재 확인
-        if (!projectRepository.existsById(projectId)) {
-            log.error("Project not found: projectId={}", projectId);
-            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
-        }
-        log.info("Project found: projectId={}", projectId);
-        
-        // 2. 현재 로그인 사용자 소유 프로젝트인지 확인
+
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
-        
-        if (!project.getUser().getLoginId().equals(loginId)) {
-            log.error("Unauthorized access: projectId={}, loginId={}, projectOwner={}", 
-                    projectId, loginId, project.getUser().getLoginId());
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
-        log.info("Authorization confirmed: projectId={}, loginId={}", projectId, loginId);
-        
-        // 3. 해당 프로젝트의 모든 scene에 속한 images 조회
+
+        validateProjectOwnership(project, loginId);
+
         List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
-        
-        // 각 씬의 이미지를 모두 수집
+
         List<SceneImage> allImages = scenes.stream()
                 .flatMap(scene -> sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId()).stream())
                 .collect(Collectors.toList());
-        
-        int imageCount = allImages.size();
-        log.info("Found {} images for project: {}", imageCount, projectId);
-        
+
+        log.info("Found {} images for project: {}", allImages.size(), projectId);
+
         return allImages.stream()
-                .map(image -> SceneImageResponse.builder()
-                        .id(image.getId())
-                        .sceneId(image.getScene().getId())
-                        .imageNumber(image.getImageNumber())
-                        .imageUrl(image.getImageUrl())
-                        .editedImageUrl(image.getEditedImageUrl())
-                        .imagePrompt(image.getImagePrompt())
-                        .status(image.getStatus().name())
-                        .statusDescription(image.getStatus().getDescription())
-                        .createdAt(image.getCreatedAt())
-                        .build())
+                .map(image -> {
+                    SceneImageResponse response = toResponse(image, isFallbackUrl(image.getImageUrl()));
+                    response.setSceneId(image.getScene().getId());
+                    return response;
+                })
                 .collect(Collectors.toList());
     }
-    
+
     @Override
     public SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId, String loginId, ImageEditCompleteRequest request) {
         log.info("Completing image edit for imageId: {}, editedImageUrl: {}", imageId, request.getEditedImageUrl());
-        
-        // 권한 체크
+
         SceneImage sceneImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
-        
-        // Scene을 통해 Project 권한 체크
+
         Scene scene = sceneImage.getScene();
-        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
-        
-        // 편집된 이미지 URL 저장
+        validateProjectOwnership(scene.getProject(), loginId);
+
         sceneImage.setEditedImageUrl(request.getEditedImageUrl());
         SceneImage savedImage = sceneImageRepository.save(sceneImage);
-        
+
         log.info("Image edit completed successfully: {}", savedImage.getId());
-        
-        return SceneImageResponse.builder()
-                .id(savedImage.getId())
-                .imageNumber(savedImage.getImageNumber())
-                .imageUrl(savedImage.getImageUrl())
-                .editedImageUrl(savedImage.getEditedImageUrl())
-                .imagePrompt(savedImage.getImagePrompt())
-                .status(savedImage.getStatus().name())
-                .statusDescription(savedImage.getStatus().getDescription())
-                .createdAt(savedImage.getCreatedAt())
-                .build();
+
+        return toResponse(savedImage, isFallbackUrl(savedImage.getImageUrl()));
     }
-    
+
     @Override
     public SceneImageResponse generateImageEditAi(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request) {
         log.info("=== AI Image Edit Generation Started ===");
-        log.info("projectId: {}, sceneId: {}, imageId: {}, userEditText: {}", 
+        log.info("projectId: {}, sceneId: {}, imageId: {}, userEditText: {}",
                 projectId, sceneId, imageId, request.getUserEditText());
-        
-        // 권한 체크
+
         SceneImage originalImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
-        
-        // Scene을 통해 Project 권한 체크
+
         Scene scene = originalImage.getScene();
-        if (!scene.getProject().getUser().getLoginId().equals(loginId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
-        
-        // 원본 이미지 URL 결정 (우선순위: editedImageUrl -> imageUrl)
-        String sourceImageUrl = originalImage.getEditedImageUrl() != null ? 
-                originalImage.getEditedImageUrl() : originalImage.getImageUrl();
-        
-        log.info("Source image URL: {}", sourceImageUrl);
-        
-        // 다음 imageNumber 계산
+        validateProjectOwnership(scene.getProject(), loginId);
+
+        String sourceImageUrl = originalImage.getEditedImageUrl() != null && !originalImage.getEditedImageUrl().isBlank()
+                ? originalImage.getEditedImageUrl()
+                : originalImage.getImageUrl();
+
         Integer maxImageNumber = sceneImageRepository.findMaxImageNumberBySceneId(sceneId);
         int nextImageNumber = (maxImageNumber != null ? maxImageNumber : 0) + 1;
-        
-        log.info("Next imageNumber: {}", nextImageNumber);
-        
+
+        log.info("Source image URL: {}", sourceImageUrl);
+        log.info("Next image number: {}", nextImageNumber);
+
         try {
-            // AI 이미지 편집 생성 시도
             String editedImageUrl = generateEditedImageUrl(sourceImageUrl, request.getUserEditText());
-            String newImagePrompt = String.format("%s (수정: %s)", 
-                    originalImage.getImagePrompt(), request.getUserEditText());
-            
-            // 새 SceneImage 엔티티 생성
+            String newImagePrompt = buildEditedPrompt(originalImage.getImagePrompt(), request.getUserEditText());
+
             SceneImage newImage = SceneImage.builder()
                     .scene(scene)
                     .imageNumber(nextImageNumber)
-                    .imageUrl(sourceImageUrl) // 원본 유지
-                    .editedImageUrl(editedImageUrl) // 수정본 저장
+                    .imageUrl(sourceImageUrl)
+                    .editedImageUrl(editedImageUrl)
                     .imagePrompt(newImagePrompt)
+                    .openaiImageId(null)
                     .status(SceneImage.ImageStatus.READY)
                     .build();
-            
+
             SceneImage savedImage = sceneImageRepository.save(newImage);
-            
             log.info("Saved new edited image with ID: {}", savedImage.getId());
-            
-            return SceneImageResponse.builder()
-                    .id(savedImage.getId())
-                    .imageNumber(savedImage.getImageNumber())
-                    .imageUrl(savedImage.getImageUrl())
-                    .editedImageUrl(savedImage.getEditedImageUrl())
-                    .imagePrompt(savedImage.getImagePrompt())
-                    .status(savedImage.getStatus().name())
-                    .statusDescription(savedImage.getStatus().getDescription())
-                    .createdAt(savedImage.getCreatedAt())
-                    .updatedAt(savedImage.getUpdatedAt())
-                    .build();
-            
+
+            return toResponse(savedImage, false);
+
         } catch (Exception e) {
-            // Fallback: mock edited URL 생성
-            log.warn("AI image edit failed, using fallback: {}", e.getMessage());
-            
+            log.warn("AI image edit failed, using fallback: {}", e.getMessage(), e);
+
             String fallbackEditedUrl = generateFallbackEditedUrl(sourceImageUrl, request.getUserEditText());
-            String newImagePrompt = String.format("%s (수정: %s - Fallback)", 
-                    originalImage.getImagePrompt(), request.getUserEditText());
-            
-            // 새 SceneImage 엔티티 생성 (fallback)
+            String newImagePrompt = buildEditedPrompt(originalImage.getImagePrompt(), request.getUserEditText()) + " (fallback)";
+
             SceneImage newImage = SceneImage.builder()
                     .scene(scene)
                     .imageNumber(nextImageNumber)
                     .imageUrl(sourceImageUrl)
                     .editedImageUrl(fallbackEditedUrl)
                     .imagePrompt(newImagePrompt)
+                    .openaiImageId(null)
                     .status(SceneImage.ImageStatus.READY)
                     .build();
-            
+
             SceneImage savedImage = sceneImageRepository.save(newImage);
-            
             log.info("Saved fallback edited image with ID: {}", savedImage.getId());
-            
-            return SceneImageResponse.builder()
-                    .id(savedImage.getId())
-                    .imageNumber(savedImage.getImageNumber())
-                    .imageUrl(savedImage.getImageUrl())
-                    .editedImageUrl(savedImage.getEditedImageUrl())
-                    .imagePrompt(savedImage.getImagePrompt())
-                    .status(savedImage.getStatus().name())
-                    .statusDescription(savedImage.getStatus().getDescription())
-                    .createdAt(savedImage.getCreatedAt())
-                    .updatedAt(savedImage.getUpdatedAt())
-                    .build();
+
+            return toResponse(savedImage, true);
         }
     }
-    
+
+    private void validateProjectOwnership(Project project, String loginId) {
+        if (!project.getUser().getLoginId().equals(loginId)) {
+            log.error("Unauthorized access: projectId={}, loginId={}, owner={}",
+                    project.getId(), loginId, project.getUser().getLoginId());
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+    }
+
+    private SceneImageResponse toResponse(SceneImage image, boolean fallbackUsed) {
+        SceneImageResponse response = SceneImageResponse.builder()
+                .id(image.getId())
+                .sceneId(image.getScene().getId())
+                .imageNumber(image.getImageNumber())
+                .imageUrl(image.getImageUrl())
+                .editedImageUrl(image.getEditedImageUrl())
+                .imagePrompt(image.getImagePrompt())
+                .status(image.getStatus().name())
+                .statusDescription(image.getStatus().getDescription())
+                .createdAt(image.getCreatedAt())
+                .updatedAt(image.getUpdatedAt())
+                .build();
+
+        response.setFallbackUsed(fallbackUsed);
+        return response;
+    }
+
     /**
-     * AI를 통한 편집된 이미지 URL 생성 (실제 구현 시 연동)
+     * scene.imagePrompt가 generic하거나 비어 있으면 summary 기반으로 실제 프롬프트 재구성
+     */
+    private String buildRealImagePrompt(Scene scene) {
+        String rawPrompt = scene.getImagePrompt();
+        String summary = scene.getSummary() != null ? scene.getSummary().trim() : "";
+        String optionalElements = scene.getOptionalElements() != null ? scene.getOptionalElements().trim() : "";
+
+        boolean genericPrompt = rawPrompt == null
+                || rawPrompt.isBlank()
+                || rawPrompt.toLowerCase().contains("standard scene")
+                || rawPrompt.toLowerCase().contains("basic lighting")
+                || rawPrompt.toLowerCase().contains("basic composition");
+
+        if (!genericPrompt) {
+            return sanitizePrompt(rawPrompt);
+        }
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("A cute hamster scene, ");
+
+        if (!summary.isBlank()) {
+            prompt.append(summary).append(", ");
+        }
+
+        if (!optionalElements.isBlank() && !"{}".equals(optionalElements)) {
+            prompt.append("scene design details: ").append(optionalElements).append(", ");
+        }
+
+        prompt.append("warm soft lighting, pastel background, cinematic composition, high detail, adorable fashion styling, 4k");
+
+        return sanitizePrompt(prompt.toString());
+    }
+
+    private String sanitizePrompt(String prompt) {
+        if (prompt == null) {
+            return "";
+        }
+        return prompt.replace("null", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String buildEditedPrompt(String originalPrompt, String userEditText) {
+        String base = originalPrompt != null && !originalPrompt.isBlank()
+                ? originalPrompt
+                : "A cute hamster fashion scene";
+
+        return sanitizePrompt(base + ", edited with request: " + userEditText);
+    }
+
+    /**
+     * 실제 AI 편집 연동 전까지는 sourceUrl 기반의 제어된 mock 편집 URL 생성
      */
     private String generateEditedImageUrl(String sourceUrl, String userEditText) {
-        // TODO: 실제 AI 이미지 편집 서비스 연동
-        // 현재는 mock URL 반환
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            throw new RuntimeException("Source image URL is empty");
+        }
         String timestamp = String.valueOf(System.currentTimeMillis());
         return String.format("%s?edited=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
     }
-    
-    /**
-     * Fallback 편집된 이미지 URL 생성
-     */
+
     private String generateFallbackEditedUrl(String sourceUrl, String userEditText) {
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            return String.format("https://fallback-image-service.com/edited/%d_%d.png",
+                    System.currentTimeMillis(),
+                    userEditText.hashCode());
+        }
         String timestamp = String.valueOf(System.currentTimeMillis());
         return String.format("%s?fallback=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
     }
-    
+
     /**
-     * Fallback 이미지 URL 생성
+     * picsum 대신 명확한 fallback URL 사용
      */
     private String generateFallbackImageUrl(String imagePrompt) {
         log.warn("IMAGE FALLBACK USED - imagePrompt: {}", imagePrompt);
-        
+
         String timestamp = String.valueOf(System.currentTimeMillis());
         String promptHash = String.valueOf(imagePrompt.hashCode());
-        
-        return String.format("https://fallback-image-service.com/%s_%s.png", 
+
+        return String.format("https://fallback-image-service.com/generated/%s_%s.png",
                 timestamp, promptHash);
+    }
+
+    private boolean isFallbackUrl(String imageUrl) {
+        if (imageUrl == null) {
+            return false;
+        }
+        return imageUrl.contains("fallback-image-service.com") || imageUrl.contains("picsum.photos");
     }
 }

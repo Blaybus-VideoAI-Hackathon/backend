@@ -13,6 +13,9 @@ public class KlingVideoRequest {
     private String cameraMovement = "static";
     private Integer negativePromptStrength = 0;
     
+    // 이미지 기반 영상 생성을 위한 필드
+    private String imageUrl;
+    
     // 필요시 추가 필드
     private String webhookUrl;
     private String webhookSecret;

@@ -32,6 +32,9 @@ public class ProjectPlan extends BaseTimeEntity {
     @Column(columnDefinition = "JSON")
     private String planData;
 
+    @Column(columnDefinition = "JSON")
+    private String analysisData;
+
     @Column(nullable = false, length = 1000)
     private String userPrompt;
 
