@@ -389,24 +389,35 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         }
 
         try {
-            log.info("Syncing video status - videoId={}, taskId={}", sceneVideo.getId(), sceneVideo.getKlingTaskId());
+            log.info("=== SYNCING VIDEO STATUS ===");
+            log.info("videoId={}, taskId={}", sceneVideo.getId(), sceneVideo.getKlingTaskId());
+            
             RunwayVideoResponse statusResponse = runwayVideoApiService.getTaskStatus(sceneVideo.getKlingTaskId());
 
             if (statusResponse != null) {
                 String runwayStatus = statusResponse.getStatus();
                 String videoUrl = statusResponse.getVideoUrl();
+                
+                log.info("Parsed runway status: {}", runwayStatus);
+                log.info("Parsed videoUrl: {}", videoUrl);
 
-                if ("succeeded".equals(runwayStatus) && videoUrl != null && !videoUrl.isBlank()) {
+                if ("COMPLETED".equals(runwayStatus) && videoUrl != null && !videoUrl.isBlank()) {
                     sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
                     sceneVideo.setVideoUrl(videoUrl);
                     sceneVideo = sceneVideoRepository.save(sceneVideo);
-                    log.info("Video status updated to COMPLETED - videoId={}, url={}", sceneVideo.getId(), videoUrl);
-                } else if ("failed".equals(runwayStatus) || "cancelled".equals(runwayStatus)) {
+                    log.info("=== VIDEO STATUS UPDATED ===");
+                    log.info("final sceneVideo.status: {}", sceneVideo.getStatus());
+                    log.info("final sceneVideo.videoUrl: {}", sceneVideo.getVideoUrl());
+                    log.info("videoId={}, url={}", sceneVideo.getId(), videoUrl);
+                } else if ("FAILED".equals(runwayStatus)) {
                     sceneVideo.setStatus(SceneVideo.VideoStatus.FAILED);
                     sceneVideo = sceneVideoRepository.save(sceneVideo);
-                    log.info("Video status updated to FAILED - videoId={}, status={}", sceneVideo.getId(), runwayStatus);
+                    log.info("=== VIDEO STATUS UPDATED ===");
+                    log.info("final sceneVideo.status: {}", sceneVideo.getStatus());
+                    log.info("final sceneVideo.videoUrl: {}", sceneVideo.getVideoUrl());
+                    log.info("videoId={}, status={}", sceneVideo.getId(), runwayStatus);
                 } else {
-                    // starting / pending / processing / throttled / queued -> GENERATING 유지
+                    // GENERATING 상태 유지
                     log.debug("Video still processing - videoId={}, status={}", sceneVideo.getId(), runwayStatus);
                 }
             }

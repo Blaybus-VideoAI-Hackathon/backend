@@ -177,13 +177,15 @@ public class RunwayVideoApiService {
             return "GENERATING";
         }
 
-        String value = rawStatus.trim().toLowerCase();
+        String value = rawStatus.trim().toUpperCase();
+        
+        log.info("Parsed runway status: {} -> {}", rawStatus, value);
 
         return switch (value) {
-            case "starting", "pending", "processing", "throttled", "queued" -> "GENERATING";
-            case "succeeded" -> "COMPLETED";
-            case "failed", "cancelled" -> "FAILED";
-            default -> value.toUpperCase();
+            case "STARTING", "PENDING", "PROCESSING", "THROTTLED", "QUEUED" -> "GENERATING";
+            case "SUCCEEDED" -> "COMPLETED";
+            case "FAILED", "CANCELLED" -> "FAILED";
+            default -> value;
         };
     }
 
@@ -191,10 +193,23 @@ public class RunwayVideoApiService {
         // output -> 관련 비디오 결과 필드에서 URL 추출
         JsonNode output = root.path("output");
         if (output.isMissingNode() || output.isEmpty()) {
+            log.debug("No output field found in response");
             return null;
         }
 
-        // 여러 가능한 필드 확인
+        log.info("Output field type: {}, content: {}", output.getNodeType(), output.toString());
+
+        // 1. output이 배열이고 첫 번째 요소가 문자열 URL인 경우
+        if (output.isArray() && output.size() > 0) {
+            JsonNode firstElement = output.get(0);
+            if (firstElement.isTextual()) {
+                String videoUrl = firstElement.asText();
+                log.info("Found video URL from output[0]: {}", videoUrl);
+                return videoUrl;
+            }
+        }
+
+        // 2. output.video 필드 확인
         JsonNode videoNode = output.path("video");
         if (!videoNode.isMissingNode() && videoNode.isTextual()) {
             String videoUrl = videoNode.asText();
@@ -202,15 +217,26 @@ public class RunwayVideoApiService {
             return videoUrl;
         }
 
-        // 다른 가능한 필드들 확인
-        for (JsonNode child : output) {
-            if (child.has("url") && child.get("url").isTextual()) {
-                String url = child.get("url").asText();
-                log.info("Found video URL from output array: {}", url);
-                return url;
+        // 3. output.url 필드 확인
+        JsonNode urlNode = output.path("url");
+        if (!urlNode.isMissingNode() && urlNode.isTextual()) {
+            String videoUrl = urlNode.asText();
+            log.info("Found video URL from output.url: {}", videoUrl);
+            return videoUrl;
+        }
+
+        // 4. output 배열의 각 요소에서 url 필드 확인
+        if (output.isArray()) {
+            for (JsonNode child : output) {
+                if (child.has("url") && child.get("url").isTextual()) {
+                    String url = child.get("url").asText();
+                    log.info("Found video URL from output array element: {}", url);
+                    return url;
+                }
             }
         }
 
+        log.info("No video URL found in output field");
         return null;
     }
 }
