@@ -15,14 +15,22 @@ import com.example.hdb.service.OpenAIService;
 import com.example.hdb.service.SceneImageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Transactional
 @Slf4j
 public class SceneImageServiceImpl implements SceneImageService {
@@ -31,6 +39,34 @@ public class SceneImageServiceImpl implements SceneImageService {
     private final SceneRepository sceneRepository;
     private final ProjectRepository projectRepository;
     private final OpenAIService openAIService;
+    private final RestTemplate restTemplate;
+
+    @Value("${cloudinary.cloud-name:}")
+    private String cloudName;
+
+    @Value("${cloudinary.api-key:}")
+    private String apiKey;
+
+    @Value("${cloudinary.api-secret:}")
+    private String apiSecret;
+
+    public SceneImageServiceImpl(
+            SceneImageRepository sceneImageRepository,
+            SceneRepository sceneRepository,
+            ProjectRepository projectRepository,
+            OpenAIService openAIService,
+            RestTemplate restTemplate
+    ) {
+        this.sceneImageRepository = sceneImageRepository;
+        this.sceneRepository = sceneRepository;
+        this.projectRepository = projectRepository;
+        this.openAIService = openAIService;
+        this.restTemplate = restTemplate;
+    }
+
+    // ──────────────────────────────────────────
+    // 이미지 생성
+    // ──────────────────────────────────────────
 
     @Override
     public SceneImageResponse generateImage(Long projectId, Long sceneId, String loginId) {
@@ -69,18 +105,24 @@ public class SceneImageServiceImpl implements SceneImageService {
         log.info("SceneImage saved with GENERATING status: {}", savedImage.getId());
 
         try {
+            // 1. OpenAI DALL-E로 이미지 생성 (임시 URL)
             log.info("=== CALLING OPENAI IMAGE API ===");
-            String imageUrl = openAIService.generateImage(imagePrompt);
+            String tempImageUrl = openAIService.generateImage(imagePrompt);
 
-            if (imageUrl == null || imageUrl.isBlank()) {
+            if (tempImageUrl == null || tempImageUrl.isBlank()) {
                 throw new RuntimeException("AI returned empty imageUrl");
             }
+            log.info("OpenAI temp URL: {}", tempImageUrl);
 
-            savedImage.setImageUrl(imageUrl);
+            // 2. Cloudinary에 업로드해서 영구 URL로 변환
+            String permanentUrl = uploadToCloudinary(tempImageUrl, sceneId, nextImageNumber);
+            log.info("Cloudinary permanent URL: {}", permanentUrl);
+
+            savedImage.setImageUrl(permanentUrl);
             savedImage.setStatus(SceneImage.ImageStatus.READY);
             SceneImage completedImage = sceneImageRepository.save(savedImage);
 
-            log.info("REAL IMAGE GENERATED - sceneId: {}, imageId: {}, imageUrl: {}",
+            log.info("IMAGE SAVED WITH PERMANENT URL - sceneId: {}, imageId: {}, url: {}",
                     sceneId, completedImage.getId(), completedImage.getImageUrl());
 
             return toResponse(completedImage, false);
@@ -99,6 +141,10 @@ public class SceneImageServiceImpl implements SceneImageService {
             return toResponse(completedImage, true);
         }
     }
+
+    // ──────────────────────────────────────────
+    // 조회
+    // ──────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
@@ -144,9 +190,14 @@ public class SceneImageServiceImpl implements SceneImageService {
                 .collect(Collectors.toList());
     }
 
+    // ──────────────────────────────────────────
+    // 이미지 편집
+    // ──────────────────────────────────────────
+
     @Override
-    public SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId, String loginId, ImageEditCompleteRequest request) {
-        log.info("Completing image edit for imageId: {}, editedImageUrl: {}", imageId, request.getEditedImageUrl());
+    public SceneImageResponse completeImageEdit(Long projectId, Long sceneId, Long imageId,
+                                                String loginId, ImageEditCompleteRequest request) {
+        log.info("Completing image edit for imageId: {}", imageId);
 
         SceneImage sceneImage = sceneImageRepository.findByIdAndSceneId(imageId, sceneId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.IMAGE_NOT_FOUND));
@@ -163,7 +214,8 @@ public class SceneImageServiceImpl implements SceneImageService {
     }
 
     @Override
-    public SceneImageResponse generateImageEditAi(Long projectId, Long sceneId, Long imageId, String loginId, SceneImageEditAiRequest request) {
+    public SceneImageResponse generateImageEditAi(Long projectId, Long sceneId, Long imageId,
+                                                  String loginId, SceneImageEditAiRequest request) {
         log.info("=== AI Image Edit Generation Started ===");
         log.info("projectId: {}, sceneId: {}, imageId: {}, userEditText: {}",
                 projectId, sceneId, imageId, request.getUserEditText());
@@ -226,6 +278,95 @@ public class SceneImageServiceImpl implements SceneImageService {
         }
     }
 
+    // ──────────────────────────────────────────
+    // PRIVATE: Cloudinary 업로드
+    // ──────────────────────────────────────────
+
+    /**
+     * OpenAI 임시 URL → Cloudinary 영구 URL로 변환
+     * Cloudinary REST API 직접 호출 (SDK 없이)
+     * 참고: https://cloudinary.com/documentation/image_upload_api_reference
+     */
+    private String uploadToCloudinary(String imageUrl, Long sceneId, int imageNumber) {
+        log.info("=== Uploading to Cloudinary ===");
+        log.info("cloudName={}, imageUrl={}", cloudName, imageUrl);
+
+        if (cloudName == null || cloudName.isBlank()) {
+            log.warn("Cloudinary not configured, using original URL");
+            return imageUrl;
+        }
+
+        try {
+            // Cloudinary unsigned upload (signed upload으로 변경 가능)
+            // https://api.cloudinary.com/v1_1/{cloud_name}/image/upload
+            String uploadUrl = String.format(
+                    "https://api.cloudinary.com/v1_1/%s/image/upload", cloudName);
+
+            // 타임스탬프 기반 서명 생성
+            long timestamp = System.currentTimeMillis() / 1000;
+            String publicId = String.format("hdb/scene_%d_img_%d_%d", sceneId, imageNumber, timestamp);
+
+            // 서명 생성: SHA-1(public_id=...&timestamp=...{api_secret})
+            String signatureInput = String.format(
+                    "public_id=%s&timestamp=%d%s", publicId, timestamp, apiSecret);
+            String signature = sha1Hex(signatureInput);
+
+            // multipart/form-data 요청
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("file", imageUrl);           // URL로 업로드
+            body.add("upload_preset", "");        // preset 없으면 빈 값
+            body.add("api_key", apiKey);
+            body.add("timestamp", String.valueOf(timestamp));
+            body.add("public_id", publicId);
+            body.add("signature", signature);
+
+            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    uploadUrl, requestEntity, Map.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                Object secureUrl = response.getBody().get("secure_url");
+                if (secureUrl != null && !secureUrl.toString().isBlank()) {
+                    log.info("Cloudinary upload SUCCESS - url: {}", secureUrl);
+                    return secureUrl.toString();
+                }
+            }
+
+            log.warn("Cloudinary upload failed, using original URL. status={}",
+                    response.getStatusCode());
+            return imageUrl;
+
+        } catch (Exception e) {
+            log.warn("Cloudinary upload error, using original URL: {}", e.getMessage());
+            return imageUrl;
+        }
+    }
+
+    /**
+     * SHA-1 해시 생성 (Cloudinary 서명용)
+     */
+    private String sha1Hex(String input) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+            byte[] bytes = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-1 hashing failed", e);
+        }
+    }
+
+    // ──────────────────────────────────────────
+    // PRIVATE: 기타 헬퍼
+    // ──────────────────────────────────────────
+
     private void validateProjectOwnership(Project project, String loginId) {
         if (!project.getUser().getLoginId().equals(loginId)) {
             log.error("Unauthorized access: projectId={}, loginId={}, owner={}",
@@ -252,13 +393,11 @@ public class SceneImageServiceImpl implements SceneImageService {
         return response;
     }
 
-    /**
-     * scene.imagePrompt가 generic하거나 비어 있으면 summary 기반으로 실제 프롬프트 재구성
-     */
     private String buildRealImagePrompt(Scene scene) {
         String rawPrompt = scene.getImagePrompt();
         String summary = scene.getSummary() != null ? scene.getSummary().trim() : "";
-        String optionalElements = scene.getOptionalElements() != null ? scene.getOptionalElements().trim() : "";
+        String optionalElements = scene.getOptionalElements() != null
+                ? scene.getOptionalElements().trim() : "";
 
         boolean genericPrompt = rawPrompt == null
                 || rawPrompt.isBlank()
@@ -271,76 +410,54 @@ public class SceneImageServiceImpl implements SceneImageService {
         }
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append("A cute hamster scene, ");
-
         if (!summary.isBlank()) {
             prompt.append(summary).append(", ");
         }
-
         if (!optionalElements.isBlank() && !"{}".equals(optionalElements)) {
-            prompt.append("scene design details: ").append(optionalElements).append(", ");
+            prompt.append("scene design: ").append(optionalElements).append(", ");
         }
-
-        prompt.append("warm soft lighting, pastel background, cinematic composition, high detail, adorable fashion styling, 4k");
+        prompt.append("warm soft lighting, cinematic composition, high detail, 4k");
 
         return sanitizePrompt(prompt.toString());
     }
 
     private String sanitizePrompt(String prompt) {
-        if (prompt == null) {
-            return "";
-        }
-        return prompt.replace("null", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
+        if (prompt == null) return "";
+        return prompt.replace("null", " ").replaceAll("\\s+", " ").trim();
     }
 
     private String buildEditedPrompt(String originalPrompt, String userEditText) {
         String base = originalPrompt != null && !originalPrompt.isBlank()
-                ? originalPrompt
-                : "A cute hamster fashion scene";
-
-        return sanitizePrompt(base + ", edited with request: " + userEditText);
+                ? originalPrompt : "A scene";
+        return sanitizePrompt(base + ", edited: " + userEditText);
     }
 
-    /**
-     * 실제 AI 편집 연동 전까지는 sourceUrl 기반의 제어된 mock 편집 URL 생성
-     */
     private String generateEditedImageUrl(String sourceUrl, String userEditText) {
         if (sourceUrl == null || sourceUrl.isBlank()) {
             throw new RuntimeException("Source image URL is empty");
         }
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        return String.format("%s?edited=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
+        return String.format("%s?edited=%d&prompt=%d",
+                sourceUrl, System.currentTimeMillis(), userEditText.hashCode());
     }
 
     private String generateFallbackEditedUrl(String sourceUrl, String userEditText) {
         if (sourceUrl == null || sourceUrl.isBlank()) {
             return String.format("https://fallback-image-service.com/edited/%d_%d.png",
-                    System.currentTimeMillis(),
-                    userEditText.hashCode());
+                    System.currentTimeMillis(), userEditText.hashCode());
         }
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        return String.format("%s?fallback=%s&prompt=%s", sourceUrl, timestamp, userEditText.hashCode());
+        return String.format("%s?fallback=%d&prompt=%d",
+                sourceUrl, System.currentTimeMillis(), userEditText.hashCode());
     }
 
-    /**
-     * picsum 대신 명확한 fallback URL 사용
-     */
     private String generateFallbackImageUrl(String imagePrompt) {
         log.warn("IMAGE FALLBACK USED - imagePrompt: {}", imagePrompt);
-
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        String promptHash = String.valueOf(imagePrompt.hashCode());
-
-        return String.format("https://fallback-image-service.com/generated/%s_%s.png",
-                timestamp, promptHash);
+        return String.format("https://fallback-image-service.com/generated/%d_%d.png",
+                System.currentTimeMillis(), imagePrompt.hashCode());
     }
 
     private boolean isFallbackUrl(String imageUrl) {
-        if (imageUrl == null) {
-            return false;
-        }
-        return imageUrl.contains("fallback-image-service.com") || imageUrl.contains("picsum.photos");
+        if (imageUrl == null) return false;
+        return imageUrl.contains("fallback-image-service.com")
+                || imageUrl.contains("picsum.photos");
     }
 }

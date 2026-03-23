@@ -1,12 +1,11 @@
 # Production 배포용 설정 (Aiven MySQL)
-# Render 배포에서 사용하는 최종 프로필
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -27,6 +26,12 @@ kling:
   access-key: ${KLING_ACCESS_KEY:}
   secret-key: ${KLING_SECRET_KEY:}
   base-url: https://api.klingai.com
+
+# Cloudinary 설정 (이미지 영구 저장)
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:dbbkpdtqx}
+  api-key: ${CLOUDINARY_API_KEY:497498544254817}
+  api-secret: ${CLOUDINARY_API_SECRET:qT4oDifyTVx2rtlt7VehsWItAcI}
 
 logging:
   level:

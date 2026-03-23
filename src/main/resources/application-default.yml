@@ -1,12 +1,11 @@
 # 로컬 개발용 기본 설정 (H2 메모리 DB)
-# 별도 profile 지정 없을 때 사용되는 기본값
 spring:
   datasource:
     url: jdbc:h2:mem:testdb
     driver-class-name: org.h2.Driver
     username: sa
-    password: 
-    
+    password:
+
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -14,17 +13,29 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        
+
   h2:
     console:
       enabled: true
-      
+
   main:
     allow-bean-definition-overriding: true
 
-# OpenAI API 설정 (로컬 테스트용)
+# OpenAI API 설정
 openai:
   api-key: ${OPENAI_API_KEY:sk-test-key-for-development}
+
+# Kling API 설정
+kling:
+  access-key: ${KLING_ACCESS_KEY:APbemH8hBQLm4afTQgftPMENFt8QQhpL}
+  secret-key: ${KLING_SECRET_KEY:CB9fherEGFnKEmL98LhLADdaFhteAHQn}
+  base-url: https://api.klingai.com
+
+# Cloudinary 설정 (이미지 영구 저장)
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:dbbkpdtqx}
+  api-key: ${CLOUDINARY_API_KEY:497498544254817}
+  api-secret: ${CLOUDINARY_API_SECRET:qT4oDifyTVx2rtlt7VehsWItAcI}
 
 logging:
   level:
