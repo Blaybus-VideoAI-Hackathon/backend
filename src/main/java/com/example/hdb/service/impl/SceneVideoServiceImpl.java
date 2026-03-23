@@ -1,7 +1,7 @@
 package com.example.hdb.service.impl;
 
-import com.example.hdb.dto.kling.KlingVideoRequest;
-import com.example.hdb.dto.kling.KlingVideoResponse;
+import com.example.hdb.dto.runway.RunwayVideoRequest;
+import com.example.hdb.dto.runway.RunwayVideoResponse;
 import com.example.hdb.dto.response.SceneVideoResponse;
 import com.example.hdb.entity.Project;
 import com.example.hdb.entity.Scene;
@@ -13,7 +13,7 @@ import com.example.hdb.repository.ProjectRepository;
 import com.example.hdb.repository.SceneImageRepository;
 import com.example.hdb.repository.SceneRepository;
 import com.example.hdb.repository.SceneVideoRepository;
-import com.example.hdb.service.KlingVideoApiService;
+import com.example.hdb.service.RunwayVideoApiService;
 import com.example.hdb.service.SceneVideoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +34,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
     private final SceneRepository sceneRepository;
     private final SceneImageRepository sceneImageRepository;
     private final ProjectRepository projectRepository;
-    private final KlingVideoApiService klingVideoApiService;
-
-    // ──────────────────────────────────────────
-    // 영상 생성
-    // ──────────────────────────────────────────
+    private final RunwayVideoApiService runwayVideoApiService;
 
     @Override
     @Transactional
@@ -57,14 +53,38 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
             }
 
-            int safeDuration = (duration == null || duration <= 0) ? 5 : duration;
+            int safeDuration = normalizeDuration(duration);
             String videoPrompt = sanitizeVideoPrompt(scene);
             String imageUrlForVideo = determineImageUrlForVideo(scene);
 
-            log.info("Video prompt: {}", videoPrompt);
-            log.info("Image URL for video: {}", imageUrlForVideo);
+            // 이미지 URL이 없으면 text-to-video fallback 없이 예외 처리
+            if (!isUsableImageUrl(imageUrlForVideo)) {
+                log.error("=== IMAGE URL VALIDATION FAILED ===");
+                log.error("sceneId={}", sceneId);
+                log.error("imageUrlForVideo: {}", imageUrlForVideo);
+                log.error("IMMEDIATE FAILURE - No image URL available for video generation");
+                
+                // SceneVideo 상태를 FAILED로 저장
+                SceneVideo failedVideo = SceneVideo.builder()
+                        .scene(scene)
+                        .videoUrl(null)
+                        .videoPrompt(videoPrompt)
+                        .duration(safeDuration)
+                        .openaiVideoId(null)
+                        .klingTaskId(null)
+                        .status(SceneVideo.VideoStatus.FAILED)
+                        .build();
+                sceneVideoRepository.save(failedVideo);
+                
+                throw new RuntimeException("No image URL available for video generation - sceneId: " + sceneId);
+            }
 
-            // 1. GENERATING 상태로 먼저 저장
+            log.info("=== VIDEO GENERATION START ===");
+            log.info("sceneId={}", sceneId);
+            log.info("final imageUrlForVideo: {}", imageUrlForVideo);
+            log.info("videoPrompt: {}", videoPrompt);
+            log.info("duration: {}", safeDuration);
+
             SceneVideo sceneVideo = SceneVideo.builder()
                     .scene(scene)
                     .videoUrl(null)
@@ -78,69 +98,62 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             SceneVideo savedVideo = sceneVideoRepository.save(sceneVideo);
             log.info("SceneVideo saved with GENERATING status: id={}", savedVideo.getId());
 
-            // 2. Kling 호출
-            String finalVideoUrl;
-            SceneVideo.VideoStatus finalStatus;
-            String klingTaskId = null;
+            // 반드시 image-to-video 방식으로만 요청 (promptImage 필드 필수)
+            log.info("=== CREATING RUNWAY REQUEST ===");
+            log.info("model: gen4.5");
+            log.info("promptText: {}", videoPrompt);
+            log.info("promptImage: {}", imageUrlForVideo);
+            log.info("ratio: 1280:720");
+            log.info("duration: 5");
+            
+            RunwayVideoRequest request = RunwayVideoRequest.builder()
+                    .promptText(videoPrompt)
+                    .promptImage(imageUrlForVideo) // null이 아님을 보장
+                    .duration(5)
+                    .build();
 
-            try {
-                KlingVideoRequest request = new KlingVideoRequest();
-                request.setPrompt(videoPrompt);
-                request.setDuration(safeDuration);
-                request.setAspectRatio("16:9");
+            log.info("=== RUNWAY REQUEST CREATED ===");
+            log.info("Request promptImage value: {}", request.getPromptImage());
 
-                if (isUsableImageUrl(imageUrlForVideo)) {
-                    request.setImageUrl(imageUrlForVideo);
-                    log.info("Using image-based video generation");
-                } else {
-                    log.warn("No usable image URL — using prompt-only video generation");
-                }
+            RunwayVideoResponse response = runwayVideoApiService.createTask(request);
+            String taskId = response != null ? response.getId() : null;
 
-                KlingVideoResponse response = klingVideoApiService.generateVideo(request);
-                klingTaskId = response != null ? response.getTaskId() : null;
-
-                if (klingTaskId != null && !klingTaskId.isBlank()) {
-                    savedVideo.setKlingTaskId(klingTaskId);
-                    sceneVideoRepository.save(savedVideo);
-                    log.info("Kling task created: {}", klingTaskId);
-                }
-
-                // 상태 확인 (1회)
-                String generatedUrl = null;
-                if (klingTaskId != null && !klingTaskId.isBlank()) {
-                    KlingVideoResponse statusResponse = klingVideoApiService.checkVideoStatus(klingTaskId);
-                    if (statusResponse != null
-                            && "completed".equalsIgnoreCase(statusResponse.getStatus())
-                            && statusResponse.getVideoUrl() != null
-                            && !statusResponse.getVideoUrl().isBlank()) {
-                        generatedUrl = statusResponse.getVideoUrl();
-                    }
-                }
-
-                if (generatedUrl != null && !generatedUrl.isBlank()) {
-                    finalVideoUrl = generatedUrl;
-                    finalStatus = SceneVideo.VideoStatus.COMPLETED;
-                    log.info("REAL VIDEO GENERATED - url={}", finalVideoUrl);
-                } else {
-                    finalVideoUrl = generateFallbackVideoUrl(sceneId, videoPrompt);
-                    // FALLBACK enum이 DB에 없으면 COMPLETED로 저장 (fallback URL이지만 사용 가능)
-                    finalStatus = SceneVideo.VideoStatus.COMPLETED;
-                    log.warn("VIDEO FALLBACK USED - sceneId={}", sceneId);
-                }
-
-            } catch (Exception klingException) {
-                log.error("Kling video generation failed: {}", klingException.getMessage(), klingException);
-                finalVideoUrl = generateFallbackVideoUrl(sceneId, videoPrompt);
-                finalStatus = SceneVideo.VideoStatus.COMPLETED;
+            if (taskId == null || taskId.isBlank()) {
+                savedVideo.setStatus(SceneVideo.VideoStatus.FAILED);
+                sceneVideoRepository.save(savedVideo);
+                throw new RuntimeException("Runway task_id is empty");
             }
 
-            savedVideo.setKlingTaskId(klingTaskId);
-            savedVideo.setVideoUrl(finalVideoUrl);
-            savedVideo.setStatus(finalStatus);
+            savedVideo.setKlingTaskId(taskId);
+            sceneVideoRepository.save(savedVideo);
+            log.info("Runway task created: {}", taskId);
+
+            try {
+                Thread.sleep(2500L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            RunwayVideoResponse statusResponse = runwayVideoApiService.getTaskStatus(taskId);
+
+            if (statusResponse != null && "COMPLETED".equals(statusResponse.getStatus())
+                    && statusResponse.getVideoUrl() != null && !statusResponse.getVideoUrl().isBlank()) {
+                savedVideo.setVideoUrl(statusResponse.getVideoUrl());
+                savedVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
+                savedVideo = sceneVideoRepository.save(savedVideo);
+
+                log.info("REAL VIDEO GENERATED - url={}", savedVideo.getVideoUrl());
+                return toResponse(savedVideo, scene.getSceneOrder(), true);
+            }
+
+            if (statusResponse != null && "FAILED".equals(statusResponse.getStatus())) {
+                savedVideo.setStatus(SceneVideo.VideoStatus.FAILED);
+                savedVideo = sceneVideoRepository.save(savedVideo);
+                throw new RuntimeException("Runway video generation failed");
+            }
+
+            savedVideo.setStatus(SceneVideo.VideoStatus.GENERATING);
             savedVideo = sceneVideoRepository.save(savedVideo);
-
-            log.info("Video saved - id={}, status={}, url={}", savedVideo.getId(), savedVideo.getStatus(), savedVideo.getVideoUrl());
-
             return toResponse(savedVideo, scene.getSceneOrder(), true);
 
         } catch (BusinessException e) {
@@ -150,10 +163,6 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
-
-    // ──────────────────────────────────────────
-    // 비동기 처리 (선택적 사용)
-    // ──────────────────────────────────────────
 
     @Async("videoGenerationExecutor")
     @Transactional
@@ -169,54 +178,26 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 return;
             }
 
-            String sourceImageUrl = determineImageUrlForVideo(sceneVideo.getScene());
-            String prompt = sanitizeVideoPrompt(sceneVideo.getScene());
-
-            KlingVideoRequest request = new KlingVideoRequest();
-            request.setPrompt(prompt);
-            request.setDuration(sceneVideo.getDuration() != null ? sceneVideo.getDuration() : 5);
-            request.setAspectRatio("16:9");
-
-            if (isUsableImageUrl(sourceImageUrl)) {
-                request.setImageUrl(sourceImageUrl);
+            if (sceneVideo.getKlingTaskId() == null || sceneVideo.getKlingTaskId().isBlank()) {
+                sceneVideo.setStatus(SceneVideo.VideoStatus.FAILED);
+                sceneVideoRepository.save(sceneVideo);
+                return;
             }
 
-            try {
-                KlingVideoResponse response = klingVideoApiService.generateVideo(request);
-                String taskId = response != null ? response.getTaskId() : null;
+            RunwayVideoResponse statusResponse = runwayVideoApiService.getTaskStatus(sceneVideo.getKlingTaskId());
 
-                sceneVideo.setKlingTaskId(taskId);
-                sceneVideoRepository.save(sceneVideo);
-
-                String finalUrl = null;
-                if (taskId != null && !taskId.isBlank()) {
-                    KlingVideoResponse statusResponse = klingVideoApiService.checkVideoStatus(taskId);
-                    if (statusResponse != null
-                            && "completed".equalsIgnoreCase(statusResponse.getStatus())
-                            && statusResponse.getVideoUrl() != null
-                            && !statusResponse.getVideoUrl().isBlank()) {
-                        finalUrl = statusResponse.getVideoUrl();
-                    }
-                }
-
-                if (finalUrl != null && !finalUrl.isBlank()) {
-                    sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
-                    sceneVideo.setVideoUrl(finalUrl);
-                } else {
-                    sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
-                    sceneVideo.setVideoUrl(generateFallbackVideoUrl(sceneVideo.getScene().getId(), prompt));
-                }
-
-                sceneVideoRepository.save(sceneVideo);
-                log.info("Async video processing completed - videoId={}, status={}", videoId, sceneVideo.getStatus());
-
-            } catch (Exception klingException) {
-                log.warn("Async Kling call failed, using fallback: {}", klingException.getMessage());
-
+            if (statusResponse != null && "COMPLETED".equals(statusResponse.getStatus())
+                    && statusResponse.getVideoUrl() != null && !statusResponse.getVideoUrl().isBlank()) {
                 sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
-                sceneVideo.setVideoUrl(generateFallbackVideoUrl(sceneVideo.getScene().getId(), prompt));
-                sceneVideoRepository.save(sceneVideo);
+                sceneVideo.setVideoUrl(statusResponse.getVideoUrl());
+            } else if (statusResponse != null && "FAILED".equals(statusResponse.getStatus())) {
+                sceneVideo.setStatus(SceneVideo.VideoStatus.FAILED);
+            } else {
+                sceneVideo.setStatus(SceneVideo.VideoStatus.GENERATING);
             }
+
+            sceneVideoRepository.save(sceneVideo);
+            log.info("Async video processing finished - videoId={}, status={}", videoId, sceneVideo.getStatus());
 
         } catch (Exception e) {
             log.error("Async video generation failed: videoId={}", videoId, e);
@@ -231,10 +212,6 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             }
         }
     }
-
-    // ──────────────────────────────────────────
-    // 조회
-    // ──────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
@@ -252,6 +229,14 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         }
 
         List<SceneVideo> videos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(sceneId);
+        
+        // GENERATING 상태인 영상들의 상태 동기화
+        videos = videos.stream()
+                .map(video -> {
+                    SceneVideo syncedVideo = syncVideoStatusIfNeeded(video);
+                    return syncedVideo != null ? syncedVideo : video;
+                })
+                .collect(Collectors.toList());
 
         return videos.stream()
                 .map(video -> toResponse(video, scene.getSceneOrder(), false))
@@ -272,24 +257,29 @@ public class SceneVideoServiceImpl implements SceneVideoService {
             }
 
             List<Scene> scenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
-            log.info("Found {} scenes for project {}", scenes.size(), projectId);
 
-            List<SceneVideoResponse> videoResponses = scenes.stream()
+            return scenes.stream()
                     .map(scene -> {
                         List<SceneVideo> sceneVideos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(scene.getId());
-                        if (sceneVideos.isEmpty()) return null;
+                        if (sceneVideos.isEmpty()) {
+                            return null;
+                        }
+
+                        // GENERATING 상태인 영상들의 상태 동기화
+                        sceneVideos = sceneVideos.stream()
+                                .map(video -> {
+                                    SceneVideo syncedVideo = syncVideoStatusIfNeeded(video);
+                                    return syncedVideo != null ? syncedVideo : video;
+                                })
+                                .collect(Collectors.toList());
 
                         SceneVideo latestVideo = sceneVideos.get(0);
-                        if (latestVideo.getVideoUrl() == null || latestVideo.getVideoUrl().isBlank()) return null;
-
+                        // 대표 영상은 최신 영상 기준으로 판단 (fallback-video-service.com 제거)
                         boolean representative = scene.getSceneOrder() == 1;
                         return toResponse(latestVideo, scene.getSceneOrder(), representative);
                     })
                     .filter(v -> v != null)
                     .collect(Collectors.toList());
-
-            log.info("Returning {} project video responses", videoResponses.size());
-            return videoResponses;
 
         } catch (BusinessException e) {
             throw e;
@@ -299,56 +289,71 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         }
     }
 
-    // ──────────────────────────────────────────
-    // PRIVATE HELPERS
-    // ──────────────────────────────────────────
+    private int normalizeDuration(Integer duration) {
+        return 5;
+    }
 
     private String determineImageUrlForVideo(Scene scene) {
-        // 1. scene의 편집된 이미지
+        log.info("=== Determining Image URL for Video Generation ===");
+        log.info("sceneId={}", scene.getId());
+        
+        // 1. scene.editedImageUrl
         if (scene.getEditedImageUrl() != null && !scene.getEditedImageUrl().trim().isEmpty()) {
-            log.info("Using scene editedImageUrl");
+            log.info("SELECTED: scene.editedImageUrl - Priority 1");
+            log.info("imageUrlForVideo: {}", scene.getEditedImageUrl());
             return scene.getEditedImageUrl();
         }
 
         try {
+            // scene_images를 imageNumber asc로 조회 후 역순으로 처리 (최신부터)
             List<SceneImage> images = sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId());
+            log.info("Found {} SceneImage records for sceneId={}", images.size(), scene.getId());
 
-            // 2. sceneImage의 편집된 이미지
-            for (SceneImage image : images) {
+            // 최신부터 처리하기 위해 역순으로 순회
+            for (int i = images.size() - 1; i >= 0; i--) {
+                SceneImage image = images.get(i);
+                
+                // 2. scene_images 최신 editedImageUrl
                 if (image.getEditedImageUrl() != null && !image.getEditedImageUrl().trim().isEmpty()) {
-                    log.info("Using sceneImage editedImageUrl");
+                    log.info("SELECTED: sceneImage.editedImageUrl - Priority 2");
+                    log.info("imageUrlForVideo: {}", image.getEditedImageUrl());
+                    log.info("SceneImage id: {}, imageNumber: {}, createdAt: {}", 
+                            image.getId(), image.getImageNumber(), image.getCreatedAt());
                     return image.getEditedImageUrl();
                 }
             }
 
-            // 3. sceneImage의 원본 이미지 (최신)
-            Optional<SceneImage> latestImage = sceneImageRepository.findFirstBySceneIdOrderByImageNumberDesc(scene.getId());
-            if (latestImage.isPresent()
-                    && latestImage.get().getImageUrl() != null
-                    && !latestImage.get().getImageUrl().trim().isEmpty()) {
-                log.info("Using sceneImage originalImageUrl");
-                return latestImage.get().getImageUrl();
+            // 최신부터 imageUrl 확인
+            for (int i = images.size() - 1; i >= 0; i--) {
+                SceneImage image = images.get(i);
+                
+                // 3. scene_images 최신 imageUrl
+                if (image.getImageUrl() != null && !image.getImageUrl().trim().isEmpty()) {
+                    log.info("SELECTED: sceneImage.imageUrl - Priority 3");
+                    log.info("imageUrlForVideo: {}", image.getImageUrl());
+                    log.info("SceneImage id: {}, imageNumber: {}, createdAt: {}", 
+                            image.getId(), image.getImageNumber(), image.getCreatedAt());
+                    return image.getImageUrl();
+                }
             }
 
         } catch (Exception e) {
-            log.warn("Failed while resolving image URL for video", e);
+            log.error("Error while resolving image URL for video - sceneId={}", scene.getId(), e);
         }
 
-        // 4. scene의 원본 이미지
+        // 4. scene.imageUrl
         if (scene.getImageUrl() != null && !scene.getImageUrl().trim().isEmpty()) {
-            log.info("Using scene originalImageUrl");
+            log.info("SELECTED: scene.imageUrl - Priority 4");
+            log.info("imageUrlForVideo: {}", scene.getImageUrl());
             return scene.getImageUrl();
         }
 
-        log.warn("No image URL available for video generation - sceneId={}", scene.getId());
+        log.error("NO IMAGE URL FOUND - sceneId={}", scene.getId());
         return null;
     }
 
     private boolean isUsableImageUrl(String imageUrl) {
-        return imageUrl != null
-                && !imageUrl.isBlank()
-                && !imageUrl.contains("picsum.photos")
-                && !imageUrl.contains("fallback-image-service.com");
+        return imageUrl != null && !imageUrl.isBlank();
     }
 
     private String sanitizeVideoPrompt(Scene scene) {
@@ -368,8 +373,48 @@ public class SceneVideoServiceImpl implements SceneVideoService {
     }
 
     private String buildPromptFromScene(Scene scene) {
-        String summary = scene.getSummary() != null ? scene.getSummary() : "a cute hamster scene";
+        String summary = scene.getSummary() != null ? scene.getSummary() : "a cinematic food scene";
         return "Cinematic short video of " + summary + ", warm lighting, smooth camera motion, high quality";
+    }
+
+    @Transactional
+    private SceneVideo syncVideoStatusIfNeeded(SceneVideo sceneVideo) {
+        if (sceneVideo.getStatus() != SceneVideo.VideoStatus.GENERATING) {
+            return sceneVideo;
+        }
+
+        if (sceneVideo.getKlingTaskId() == null || sceneVideo.getKlingTaskId().isBlank()) {
+            log.warn("No taskId found for GENERATING video - videoId={}", sceneVideo.getId());
+            return sceneVideo;
+        }
+
+        try {
+            log.info("Syncing video status - videoId={}, taskId={}", sceneVideo.getId(), sceneVideo.getKlingTaskId());
+            RunwayVideoResponse statusResponse = runwayVideoApiService.getTaskStatus(sceneVideo.getKlingTaskId());
+
+            if (statusResponse != null) {
+                String runwayStatus = statusResponse.getStatus();
+                String videoUrl = statusResponse.getVideoUrl();
+
+                if ("succeeded".equals(runwayStatus) && videoUrl != null && !videoUrl.isBlank()) {
+                    sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
+                    sceneVideo.setVideoUrl(videoUrl);
+                    sceneVideo = sceneVideoRepository.save(sceneVideo);
+                    log.info("Video status updated to COMPLETED - videoId={}, url={}", sceneVideo.getId(), videoUrl);
+                } else if ("failed".equals(runwayStatus) || "cancelled".equals(runwayStatus)) {
+                    sceneVideo.setStatus(SceneVideo.VideoStatus.FAILED);
+                    sceneVideo = sceneVideoRepository.save(sceneVideo);
+                    log.info("Video status updated to FAILED - videoId={}, status={}", sceneVideo.getId(), runwayStatus);
+                } else {
+                    // starting / pending / processing / throttled / queued -> GENERATING 유지
+                    log.debug("Video still processing - videoId={}, status={}", sceneVideo.getId(), runwayStatus);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to sync video status - videoId={}, taskId={}", sceneVideo.getId(), sceneVideo.getKlingTaskId(), e);
+        }
+
+        return sceneVideo;
     }
 
     private SceneVideoResponse toResponse(SceneVideo sceneVideo, Integer sceneOrder, boolean representative) {
@@ -385,16 +430,6 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 representative,
                 sceneVideo.getCreatedAt(),
                 sceneVideo.getUpdatedAt()
-        );
-    }
-
-    private String generateFallbackVideoUrl(Long sceneId, String videoPrompt) {
-        log.warn("VIDEO FALLBACK URL GENERATED - sceneId={}", sceneId);
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        String promptHash = String.valueOf(videoPrompt != null ? videoPrompt.hashCode() : 0);
-        return String.format(
-                "https://fallback-video-service.com/scene_%d_%s_%s.mp4",
-                sceneId, timestamp, promptHash
         );
     }
 }

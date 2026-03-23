@@ -22,10 +22,10 @@ server:
 openai:
   api-key: ${OPENAI_API_KEY:}
 
-kling:
-  access-key: ${KLING_ACCESS_KEY:}
-  secret-key: ${KLING_SECRET_KEY:}
-  base-url: https://api.klingai.com
+# Runway API 설정
+runway:
+  api:
+    key: ${RUNWAY_API_KEY:}
 
 # Cloudinary 설정 (이미지 영구 저장)
 cloudinary:
