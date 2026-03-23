@@ -44,7 +44,8 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
     
     @Override
     public ProjectVideoResponse mergeProjectVideos(Long projectId, String loginId, VideoMergeRequest request) {
-        log.info("Merging videos for projectId: {}, loginId: {}", projectId, loginId);
+        log.info("=== STARTING PROJECT VIDEO MERGE ===");
+        log.info("projectId={}, loginId={}", projectId, loginId);
         
         // 권한 체크
         Project project = projectRepository.findById(projectId)
@@ -62,25 +63,66 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                 throw new BusinessException(ErrorCode.SCENE_NOT_FOUND);
             }
             
-            // 2. 각 Scene의 영상 URL 수집
+            log.info("=== SCENE LIST FOR MERGE ===");
+            for (Scene scene : scenes) {
+                log.info("sceneId={}, sceneOrder={}, summary='{}'", 
+                        scene.getId(), scene.getSceneOrder(), scene.getSummary());
+            }
+            
+            // 2. 각 Scene의 COMPLETED 영상 수집
             List<String> videoUrls = new ArrayList<>();
             List<String> missingScenes = new ArrayList<>();
             
             for (Scene scene : scenes) {
-                String videoUrl = getSceneVideoUrl(scene);
-                if (videoUrl != null && !videoUrl.trim().isEmpty()) {
-                    videoUrls.add(videoUrl);
+                // 병합 직전 각 sceneId의 scene_videos raw 상태 로그
+                log.info("=== CHECKING SCENE_VIDEOS RAW STATUS ===");
+                log.info("sceneId={}, sceneOrder={}", scene.getId(), scene.getSceneOrder());
+                
+                List<SceneVideo> allSceneVideos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(scene.getId());
+                for (SceneVideo sv : allSceneVideos) {
+                    log.info("RAW VIDEO - videoId={}, status={}, videoUrl={}, createdAt={}", 
+                            sv.getId(), sv.getStatus(), sv.getVideoUrl(), sv.getCreatedAt());
+                }
+                
+                SceneVideo selectedVideo = getLatestMergeableSceneVideo(scene.getId());
+                
+                if (selectedVideo != null) {
+                    videoUrls.add(selectedVideo.getVideoUrl());
+                    
+                    // 선택 이유 로그
+                    String selectionReason;
+                    if (selectedVideo.getStatus() == SceneVideo.VideoStatus.COMPLETED) {
+                        selectionReason = "COMPLETED 우선 선택";
+                    } else {
+                        selectionReason = "GENERATING fallback 선택";
+                    }
+                    
+                    log.info("SELECTED VIDEO FOR MERGE - sceneId={}, sceneOrder={}, videoId={}, status={}, videoUrl={}, reason={}", 
+                            scene.getId(), scene.getSceneOrder(), selectedVideo.getId(), 
+                            selectedVideo.getStatus(), selectedVideo.getVideoUrl(), selectionReason);
                 } else {
-                    missingScenes.add("Scene " + scene.getSceneOrder() + " (" + scene.getSummary() + ")");
+                    String errorMsg = String.format("Scene %d (sceneId=%d, order=%d, summary='%s')", 
+                            scene.getSceneOrder(), scene.getId(), scene.getSceneOrder(), scene.getSummary());
+                    missingScenes.add(errorMsg);
+                    log.warn("NO MERGEABLE VIDEO FOUND - sceneId={}, sceneOrder={} (COMPLETED or GENERATING with videoUrl 없음)", 
+                            scene.getId(), scene.getSceneOrder());
                 }
             }
             
-            // 3. 영상 없는 Scene 처리
+            // 3. 병합 대상 최종 videoUrl 리스트 로그
+            log.info("=== FINAL MERGE CANDIDATES ===");
+            log.info("total videos found: {}", videoUrls.size());
+            for (int i = 0; i < videoUrls.size(); i++) {
+                log.info("mergeUrl[{}]: {}", i, videoUrls.get(i));
+            }
+            
+            // 4. 영상 없는 Scene 처리
             if (!missingScenes.isEmpty()) {
                 if (request.getSkipMissingVideos() != null && request.getSkipMissingVideos()) {
                     log.warn("Skipping scenes without videos: {}", missingScenes);
                 } else {
                     String errorMsg = "다음 Scene에 영상이 없습니다: " + String.join(", ", missingScenes);
+                    log.error("MERGE FAILED - missing scenes: {}", missingScenes);
                     throw new BusinessException(ErrorCode.VIDEO_MERGE_FAILED, errorMsg);
                 }
             }
@@ -89,14 +131,15 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                 throw new BusinessException(ErrorCode.VIDEO_MERGE_FAILED, "병합할 영상이 없습니다.");
             }
             
-            // 4. FFmpeg으로 영상 병합
+            // 5. FFmpeg으로 영상 병합
             String finalVideoUrl = mergeVideosWithFFmpeg(videoUrls, projectId);
             
-            // 5. Project에 최종 영상 URL 저장
+            // 6. Project에 최종 영상 URL 저장
             project.setFinalVideoUrl(finalVideoUrl);
             projectRepository.save(project);
             
-            log.info("Video merge completed successfully: projectId={}, finalVideoUrl={}", projectId, finalVideoUrl);
+            log.info("=== PROJECT VIDEO MERGE COMPLETED ===");
+            log.info("projectId={}, finalVideoUrl={}", projectId, finalVideoUrl);
             
             return ProjectVideoResponse.builder()
                     .projectId(projectId)
@@ -107,8 +150,11 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                     .updatedAt(project.getUpdatedAt())
                     .build();
             
+        } catch (BusinessException e) {
+            log.error("Business exception during video merge - projectId={}", projectId, e);
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to merge videos for projectId: {}", projectId, e);
+            log.error("Unexpected error during video merge - projectId={}", projectId, e);
             throw new BusinessException(ErrorCode.VIDEO_MERGE_FAILED, "영상 병합에 실패했습니다: " + e.getMessage());
         }
     }
@@ -140,26 +186,30 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
     }
     
     /**
-     * Scene의 영상 URL 조회 (우선순위: Scene.editedImageUrl -> SceneImage.editedImageUrl -> SceneImage.imageUrl -> Scene.videoUrl)
+     * sceneId 기준으로 병합 가능한 가장 최신 영상 조회
+     * 우선순위: 1. COMPLETED + videoUrl, 2. GENERATING + videoUrl
+     * @param sceneId Scene ID
+     * @return 병합 가능한 가장 최신 SceneVideo, 없으면 null
      */
-    private String getSceneVideoUrl(Scene scene) {
-        // 1. Scene.editedImageUrl
-        if (scene.getEditedImageUrl() != null && !scene.getEditedImageUrl().trim().isEmpty()) {
-            return scene.getEditedImageUrl();
-        }
+    private SceneVideo getLatestMergeableSceneVideo(Long sceneId) {
+        List<SceneVideo> videos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(sceneId);
         
-        // 2. SceneImage 중 가장 최신 영상
-        List<SceneVideo> videos = sceneVideoRepository.findBySceneOrderByCreatedAtDesc(scene);
-        if (!videos.isEmpty()) {
-            SceneVideo latestVideo = videos.get(0);
-            if (latestVideo.getVideoUrl() != null && !latestVideo.getVideoUrl().trim().isEmpty()) {
-                return latestVideo.getVideoUrl();
+        // 1순위: COMPLETED + videoUrl
+        for (SceneVideo video : videos) {
+            if (video.getStatus() == SceneVideo.VideoStatus.COMPLETED 
+                    && video.getVideoUrl() != null 
+                    && !video.getVideoUrl().trim().isEmpty()) {
+                return video;
             }
         }
         
-        // 3. Scene.videoUrl (기존 필드)
-        if (scene.getVideoUrl() != null && !scene.getVideoUrl().trim().isEmpty()) {
-            return scene.getVideoUrl();
+        // 2순위: GENERATING + videoUrl
+        for (SceneVideo video : videos) {
+            if (video.getStatus() == SceneVideo.VideoStatus.GENERATING 
+                    && video.getVideoUrl() != null 
+                    && !video.getVideoUrl().trim().isEmpty()) {
+                return video;
+            }
         }
         
         return null;

@@ -402,19 +402,56 @@ public class SceneVideoServiceImpl implements SceneVideoService {
                 log.info("Parsed videoUrl: {}", videoUrl);
 
                 if ("COMPLETED".equals(runwayStatus) && videoUrl != null && !videoUrl.isBlank()) {
+                    // 저장 전 상태 로그
+                    log.info("=== BEFORE SAVE ===");
+                    log.info("sceneVideo.id: {}", sceneVideo.getId());
+                    log.info("sceneVideo.status (before): {}", sceneVideo.getStatus());
+                    log.info("sceneVideo.videoUrl (before): {}", sceneVideo.getVideoUrl());
+                    
+                    // 상태 업데이트
                     sceneVideo.setStatus(SceneVideo.VideoStatus.COMPLETED);
                     sceneVideo.setVideoUrl(videoUrl);
+                    
+                    // DB 저장
                     sceneVideo = sceneVideoRepository.save(sceneVideo);
+                    
+                    // 저장 직후 상태 로그
+                    log.info("=== AFTER SAVE ===");
+                    log.info("sceneVideo.status (after): {}", sceneVideo.getStatus());
+                    log.info("sceneVideo.videoUrl (after): {}", sceneVideo.getVideoUrl());
+                    
+                    // Flush 강제 실행
+                    sceneVideoRepository.flush();
+                    
+                    // DB 재조회로 최종 확인
+                    SceneVideo dbVideo = sceneVideoRepository.findById(sceneVideo.getId()).orElse(null);
+                    if (dbVideo != null) {
+                        log.info("=== AFTER FLUSH & DB RELOAD ===");
+                        log.info("dbVideo.status: {}", dbVideo.getStatus());
+                        log.info("dbVideo.videoUrl: {}", dbVideo.getVideoUrl());
+                        log.info("videoId={}, url={}", dbVideo.getId(), dbVideo.getVideoUrl());
+                        
+                        // DB 재조회한 객체로 반환
+                        sceneVideo = dbVideo;
+                    } else {
+                        log.error("FAILED TO RELOAD VIDEO FROM DB - videoId={}", sceneVideo.getId());
+                    }
+                    
                     log.info("=== VIDEO STATUS UPDATED ===");
                     log.info("final sceneVideo.status: {}", sceneVideo.getStatus());
                     log.info("final sceneVideo.videoUrl: {}", sceneVideo.getVideoUrl());
-                    log.info("videoId={}, url={}", sceneVideo.getId(), videoUrl);
+                    
                 } else if ("FAILED".equals(runwayStatus)) {
+                    log.info("=== BEFORE SAVE (FAILED) ===");
+                    log.info("sceneVideo.id: {}", sceneVideo.getId());
+                    log.info("sceneVideo.status (before): {}", sceneVideo.getStatus());
+                    
                     sceneVideo.setStatus(SceneVideo.VideoStatus.FAILED);
                     sceneVideo = sceneVideoRepository.save(sceneVideo);
-                    log.info("=== VIDEO STATUS UPDATED ===");
+                    sceneVideoRepository.flush();
+                    
+                    log.info("=== VIDEO STATUS UPDATED (FAILED) ===");
                     log.info("final sceneVideo.status: {}", sceneVideo.getStatus());
-                    log.info("final sceneVideo.videoUrl: {}", sceneVideo.getVideoUrl());
                     log.info("videoId={}, status={}", sceneVideo.getId(), runwayStatus);
                 } else {
                     // GENERATING 상태 유지
