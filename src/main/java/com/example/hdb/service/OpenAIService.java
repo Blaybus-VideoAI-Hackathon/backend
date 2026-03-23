@@ -70,7 +70,17 @@ public class OpenAIService {
                    - 2안: 액션/역동성 중심
                    - 3안: 유머/반전 중심
                 5. 프로젝트 공통 정보는 반드시 그대로 유지
-                6. 반드시 JSON만 반환
+                6. 반드시 한국어로 작성하고 영어 금지
+                7. 구조화된 출력 금지, 연속된 서술형 스토리 문단으로 작성
+                8. 리스트/항목 나열 금지
+                9. storyLine은 최소 6문장 이상, 가능하면 8~10문장 정도로 작성
+                10. 짧은 요약 금지, 실제 영상처럼 상상되는 긴 스토리 문단으로 작성
+                11. "이야기", "장면", "순간" 같은 추상적 표현만 쓰지 말고,
+                    실제 인물의 행동, 배경, 감정 변화, 분위기, 사건 전개를 구체적으로 묘사
+                12. 시작 → 전개 → 감정 고조 → 마무리 흐름이 보이게 작성
+                13. 15~30초 영상으로 자연스럽게 3~6개의 장면으로 분해할 수 있는 구조 포함
+                14. 제목, 리스트, 항목 나열 금지
+                15. 오직 하나의 긴 서술형 문단으로 작성
 
                 형식:
                 {
@@ -82,9 +92,8 @@ public class OpenAIService {
                       "displayText": "...",
                       "recommendationReason": "...",
                       "strengths": ["...", "..."],
-                      "targetMood": "...",
                       "targetUseCase": "...",
-                      "storyLine": "...",
+                      "storyLine": "최소 6문장 이상의 구체적인 서술형 스토리 문단 (인물 행동, 배경, 감정 변화, 사건 전개 포함)",
                       "coreElements": {
                         "purpose": "...",
                         "duration": 20,
@@ -112,6 +121,11 @@ public class OpenAIService {
                 - style: %s
 
                 위 사용자 요청의 핵심 소재(캐릭터, 상황, 감성)를 반드시 실제 기획안에 반영하세요.
+                
+                중요 요구사항:
+                - 짧게 요약하지 말고, 실제 영상처럼 상상되는 긴 스토리 문단으로 작성하라
+                - storyLine은 최소 6문장 이상으로 작성하라
+                - 인물의 구체적인 행동, 감정, 배경 묘사를 포함하라
                 """, userPrompt, projectPurpose, duration, ratio, style);
 
         String response = callOpenAI(systemPrompt, formattedUserPrompt);
@@ -147,7 +161,8 @@ public class OpenAIService {
                    - "선택된 기획안의 스토리라인"
                    - "분석된 첫 번째 장면"
                    같은 표현 금지
-                4. 반드시 JSON만 반환
+                4. 반드시 한국어로 작성하고 영어 금지
+                5. 반드시 JSON만 반환
 
                 형식:
                 {
@@ -220,7 +235,8 @@ public class OpenAIService {
                    - "기본 설계", "표준", "A standard scene..."
                 3. userDesignRequest를 실제 반영할 것
                 4. imagePrompt와 videoPrompt는 상세하게 작성
-                5. 반드시 JSON만 반환
+                5. 반드시 한국어로 작성하고 영어 금지
+                6. 반드시 JSON만 반환
 
                 주의: effects는 단순 문자열로 작성하세요. (배열 아님)
 
@@ -360,7 +376,8 @@ public class OpenAIService {
                 2. videoPrompt는 동적인 장면 묘사
                 3. "A standard scene" 같은 generic 문장 금지
                 4. null, N/A 같은 표현 금지
-                5. 반드시 JSON만 반환
+                5. 반드시 한국어로 작성하고 영어 금지
+                6. 반드시 JSON만 반환
 
                 형식:
                 {

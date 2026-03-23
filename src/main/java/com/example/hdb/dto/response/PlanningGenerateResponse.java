@@ -45,9 +45,6 @@ public class PlanningGenerateResponse {
         @Schema(description = "강점 목록")
         private List<String> strengths;
         
-        @Schema(description = "타겟 분위기")
-        private String targetMood;
-        
         @Schema(description = "타겟 사용 사례")
         private String targetUseCase;
         

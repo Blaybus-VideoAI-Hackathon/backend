@@ -30,7 +30,6 @@ public class ProjectPlanResponseV3 {
                 "주인공의 성장과 변화를 따뜻하게 그려내며 시청자의 감성을 자극하는 스토리텔링 광고입니다.",
                 "따뜻한 감성으로 브랜드 이미지를 강화하고, 시청자의 공감을 얻어 자발적인 공유를 유도합니다.",
                 java.util.List.of("강력한 감성 연결", "높은 공감도", "바이럴 확산 가능성"),
-                "따뜻함, 감동, 희망",
                 "브랜드 인지도 향상, 감성 마케팅",
                 new CoreElements("숏폼형", 20, "9:16", "귀엽고 따뜻한 감성 광고", "성장하는 주인공", 
                     java.util.List.of("조력자", "경쟁자"), "현실적인 일상 공간", "도입 → 갈등 → 성장 → 해결", 
@@ -40,7 +39,6 @@ public class ProjectPlanResponseV3 {
                 "빠른 템포와 역동적인 장면으로 시청자의 시선을 사로잡는 액션 광고입니다.",
                 "강렬한 비주얼과 빠른 전개로 짧은 시간 내 최대의 임팩트를 전달합니다.",
                 java.util.List.of("강력한 시선 집중", "높은 기억력", "숏폼 최적화"),
-                "긴장감, 스릴, 에너지",
                 "신제품 하이라이트, 기능 시연",
                 new CoreElements("숏폼형", 20, "9:16", "귀엽고 따뜻한 감성 광고", "역동적인 주인공", 
                     java.util.List.of("도전 과제", "목표물"), "현대적인 도시 공간", "훅 → 전개 → 클라이맥스", 
@@ -50,7 +48,6 @@ public class ProjectPlanResponseV3 {
                 "유머와 재치로 시청자에게 웃음을 선사하며 브랜드를 친근하게 만드는 코미디 광고입니다.",
                 "긍정적인 감정과 즐거움을 통해 브랜드에 대한 호감도를 극대화합니다.",
                 java.util.List.of("강력한 감정 연결", "높은 공감도", "바이럴 확산 가능성"),
-                "유쾌함, 재미, 친근함",
                 "브랜드 친근화, 바이럴 마케팅",
                 new CoreElements("숏폼형", 20, "9:16", "귀엽고 따뜻한 감성 광고", "유쾌한 주인공", 
                     java.util.List.of("웃음 유발 캐릭터", "엉뚱한 상황"), "일상적인 공간", "소개 → 갈등 → 유머 해결", 
@@ -83,9 +80,6 @@ public class ProjectPlanResponseV3 {
         
         @Schema(description = "강점 목록")
         private List<String> strengths;
-        
-        @Schema(description = "타겟 분위기")
-        private String targetMood;
         
         @Schema(description = "타겟 사용 사례")
         private String targetUseCase;
