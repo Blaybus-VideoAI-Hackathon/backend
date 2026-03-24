@@ -207,7 +207,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<SceneVideoResponse> getVideos(Long projectId, Long sceneId, String loginId) {
         log.info("=== Get Scene Videos === projectId={}, sceneId={}, loginId={}", projectId, sceneId, loginId);
 
@@ -232,7 +232,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<SceneVideoResponse> getProjectVideos(Long projectId, String loginId) {
         log.info("=== Project Videos Query Started === projectId={}, loginId={}", projectId, loginId);
 
