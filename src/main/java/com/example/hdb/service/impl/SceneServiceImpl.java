@@ -456,9 +456,6 @@ public class SceneServiceImpl implements SceneService {
         );
     }
 
-    /**
-     * LLM이 optionalElements를 String 또는 Object로 다양하게 반환하므로 안전하게 파싱
-     */
     private OptionalElements parseOptionalElementsFromNode(JsonNode node, String designRequest, String sceneSummary) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return createOptionalElementsFromRequest(designRequest, sceneSummary);
@@ -472,9 +469,6 @@ public class SceneServiceImpl implements SceneService {
         }
     }
 
-    /**
-     * 필수 필드가 비어있으면 채워주는 메서드
-     */
     private OptionalElements ensureRequiredFields(OptionalElements elements, String designRequest, String sceneSummary) {
         if (elements == null) {
             return createOptionalElementsFromRequest(designRequest, sceneSummary);
@@ -483,9 +477,9 @@ public class SceneServiceImpl implements SceneService {
         String req = designRequest == null ? "" : designRequest.toLowerCase();
 
         if (elements.getAction() == null || elements.getAction().isBlank()) {
-            elements.setAction(req.contains("옷") || req.contains("변신")
-                    ? "the hamster changes clothes excitedly"
-                    : "the hamster moves naturally through the scene");
+            elements.setAction(sceneSummary != null && !sceneSummary.isBlank()
+                    ? "subject moves naturally through the scene: " + sceneSummary
+                    : "subject moves naturally through the scene");
         }
         if (elements.getCamera() == null || elements.getCamera().isBlank()) {
             if (req.contains("가깝") || req.contains("클로즈")) {
@@ -519,9 +513,6 @@ public class SceneServiceImpl implements SceneService {
         return elements;
     }
 
-    /**
-     * 사용자 요청 텍스트 기반으로 OptionalElements 생성
-     */
     private OptionalElements createOptionalElementsFromRequest(String designRequest, String sceneSummary) {
         String req = designRequest == null ? "" : designRequest.toLowerCase();
 
@@ -547,9 +538,10 @@ public class SceneServiceImpl implements SceneService {
             camera = "medium shot";
         }
 
-        String action = (req.contains("옷") || req.contains("변신"))
-                ? "the hamster changes clothes and reacts excitedly"
-                : "the hamster moves naturally through the scene";
+        // 햄스터 하드코딩 제거 → sceneSummary 기반으로 변경
+        String action = sceneSummary != null && !sceneSummary.isBlank()
+                ? "subject moves naturally through the scene: " + sceneSummary
+                : "subject moves naturally through the scene";
 
         return OptionalElements.builder()
                 .action(action)
@@ -567,7 +559,7 @@ public class SceneServiceImpl implements SceneService {
 
     private String buildProjectCoreStr(com.example.hdb.dto.response.PlanAnalysisResponse planAnalysis) {
         if (planAnalysis == null || planAnalysis.getProjectCore() == null) {
-            return "cute hamster trying on different clothes in a cozy wardrobe room";
+            return "";
         }
         var core = planAnalysis.getProjectCore();
         return String.format(
@@ -623,7 +615,7 @@ public class SceneServiceImpl implements SceneService {
         try {
             return elements == null ? "{}" : objectMapper.writeValueAsString(elements);
         } catch (Exception e) {
-            return "{\"action\":\"햄스터가 옷을 갈아입는다\",\"camera\":\"medium shot\",\"lighting\":\"warm soft lighting\",\"mood\":\"warm cozy\"}";
+            return "{}";
         }
     }
 
@@ -640,31 +632,27 @@ public class SceneServiceImpl implements SceneService {
     }
 
     private String generateImagePromptFromSceneAndDesign(String sceneSummary, OptionalElements elements) {
-        String action = elements != null && elements.getAction() != null ? elements.getAction() : "the hamster poses naturally";
+        String action = elements != null && elements.getAction() != null ? elements.getAction() : "subject poses naturally";
         String camera = elements != null && elements.getCamera() != null ? elements.getCamera() : "medium close-up shot";
         String lighting = elements != null && elements.getLighting() != null ? elements.getLighting() : "warm soft lighting";
         String mood = elements != null && elements.getMood() != null ? elements.getMood() : "warm cozy";
         return String.format(
-                "A cute hamster scene: %s, %s, %s, %s, %s, cinematic composition, detailed, high quality, 4k",
+                "A cinematic scene: %s, %s, %s, %s, %s, cinematic composition, detailed, high quality, 4k",
                 sceneSummary, action, camera, lighting, mood
         );
     }
 
     private String generateVideoPromptFromSceneAndDesign(String sceneSummary, OptionalElements elements) {
-        String action = elements != null && elements.getAction() != null ? elements.getAction() : "the hamster moves naturally";
+        String action = elements != null && elements.getAction() != null ? elements.getAction() : "subject moves naturally";
         String camera = elements != null && elements.getCamera() != null ? elements.getCamera() : "medium close-up shot";
         String lighting = elements != null && elements.getLighting() != null ? elements.getLighting() : "warm soft lighting";
         String mood = elements != null && elements.getMood() != null ? elements.getMood() : "warm cozy";
         String cameraMotion = elements != null && elements.getCameraMotion() != null ? elements.getCameraMotion() : "slow push in";
         return String.format(
-                "Cinematic video of a cute hamster: %s, %s, %s, %s, %s, camera motion: %s, smooth animation, high quality",
+                "Cinematic video: %s, %s, %s, %s, %s, camera motion: %s, smooth animation, high quality",
                 sceneSummary, action, camera, lighting, mood, cameraMotion
         );
     }
-
-    // ──────────────────────────────────────────
-    // 하위 호환을 위해 남겨두는 unused 메서드들
-    // ──────────────────────────────────────────
 
     private String extractCoreElementsForSceneGeneration(Project project) {
         try {
