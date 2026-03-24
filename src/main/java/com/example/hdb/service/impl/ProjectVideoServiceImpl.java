@@ -14,34 +14,21 @@ import com.example.hdb.service.ProjectVideoService;
 import com.example.hdb.service.SceneVideoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class ProjectVideoServiceImpl implements ProjectVideoService {
-
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ProjectVideoServiceImpl.class);
 
     private final ProjectRepository projectRepository;
     private final SceneRepository sceneRepository;
     private final SceneVideoRepository sceneVideoRepository;
     private final SceneVideoService sceneVideoService;
-
-    @Value("${app.video.output.path:/tmp/videos}")
-    private String videoOutputPath;
-
-    @Value("${app.video.base-url:http://localhost:8080/videos}")
-    private String videoBaseUrl;
 
     @Override
     public ProjectVideoResponse mergeProjectVideos(Long projectId, String loginId, VideoMergeRequest request) {
@@ -71,7 +58,6 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                 log.info("=== SYNCING & CHECKING SCENE_VIDEOS ===");
                 log.info("sceneId={}, sceneOrder={}", scene.getId(), scene.getSceneOrder());
 
-                // 병합 전 Runway에서 최신 상태 동기화
                 SceneVideo selectedVideo = sceneVideoService.syncAndGetLatestVideo(scene.getId());
 
                 if (selectedVideo != null && selectedVideo.getVideoUrl() != null && !selectedVideo.getVideoUrl().isBlank()) {
@@ -106,19 +92,20 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                 throw new BusinessException(ErrorCode.VIDEO_MERGE_FAILED, "병합할 영상이 없습니다.");
             }
 
-            String finalVideoUrl = mergeVideosWithFFmpeg(videoUrls, projectId);
+            // FFmpeg 병합 대신 videoUrl 목록을 콤마로 연결해서 저장
+            String allVideoUrls = String.join(",", videoUrls);
 
-            project.setFinalVideoUrl(finalVideoUrl);
+            project.setFinalVideoUrl(allVideoUrls);
             projectRepository.save(project);
 
-            log.info("=== PROJECT VIDEO MERGE COMPLETED ===");
-            log.info("projectId={}, finalVideoUrl={}", projectId, finalVideoUrl);
+            log.info("=== PROJECT VIDEO MERGE COMPLETED (URL LIST) ===");
+            log.info("projectId={}, videoCount={}, urls={}", projectId, videoUrls.size(), allVideoUrls);
 
             return ProjectVideoResponse.builder()
                     .projectId(projectId)
-                    .finalVideoUrl(finalVideoUrl)
+                    .finalVideoUrl(allVideoUrls)
                     .status("READY")
-                    .message("최종 영상 병합 완료")
+                    .message("영상 목록 준비 완료 (" + videoUrls.size() + "개)")
                     .createdAt(project.getUpdatedAt())
                     .updatedAt(project.getUpdatedAt())
                     .build();
@@ -151,101 +138,5 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();
-    }
-
-    private String mergeVideosWithFFmpeg(List<String> videoUrls, Long projectId) throws IOException, InterruptedException {
-        log.info("Merging {} videos with FFmpeg for projectId: {}", videoUrls.size(), projectId);
-
-        Path outputDir = Paths.get(videoOutputPath);
-        if (!Files.exists(outputDir)) {
-            Files.createDirectories(outputDir);
-        }
-
-        List<String> tempFiles = new ArrayList<>();
-        List<String> concatList = new ArrayList<>();
-
-        for (int i = 0; i < videoUrls.size(); i++) {
-            String videoUrl = videoUrls.get(i);
-            String tempFile = downloadVideoToTemp(videoUrl, projectId, i);
-            if (tempFile != null) {
-                tempFiles.add(tempFile);
-                concatList.add("file '" + tempFile + "'");
-            }
-        }
-
-        if (concatList.isEmpty()) {
-            throw new RuntimeException("No valid video files to merge");
-        }
-
-        String concatFilePath = videoOutputPath + "/project-" + projectId + "-concat.txt";
-        String concatContent = String.join("\n", concatList);
-        Files.write(Paths.get(concatFilePath), concatContent.getBytes());
-
-        String outputFileName = "project-" + projectId + "-final.mp4";
-        String outputFilePath = videoOutputPath + "/" + outputFileName;
-
-        String[] ffmpegCommand = {
-                "ffmpeg",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concatFilePath,
-                "-c", "copy",
-                "-y",
-                outputFilePath
-        };
-
-        log.info("Executing FFmpeg command: {}", String.join(" ", ffmpegCommand));
-
-        ProcessBuilder pb = new ProcessBuilder(ffmpegCommand);
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-
-        try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.debug("FFmpeg: {}", line);
-            }
-        }
-
-        int exitCode = process.waitFor();
-
-        cleanupTempFiles(tempFiles, concatFilePath);
-
-        if (exitCode != 0) {
-            throw new RuntimeException("FFmpeg failed with exit code: " + exitCode);
-        }
-
-        String finalVideoUrl = videoBaseUrl + "/" + outputFileName;
-        log.info("FFmpeg merge completed: {}", finalVideoUrl);
-
-        return finalVideoUrl;
-    }
-
-    private String downloadVideoToTemp(String videoUrl, Long projectId, int index) {
-        try {
-            String fileName = "project-" + projectId + "-scene-" + index + ".mp4";
-            String tempPath = videoOutputPath + "/" + fileName;
-            log.info("Using video URL as temp file: {} -> {}", videoUrl, tempPath);
-            return tempPath;
-        } catch (Exception e) {
-            log.error("Failed to download video: {}", videoUrl, e);
-            return null;
-        }
-    }
-
-    private void cleanupTempFiles(List<String> tempFiles, String concatFilePath) {
-        for (String tempFile : tempFiles) {
-            try {
-                Files.deleteIfExists(Paths.get(tempFile));
-            } catch (IOException e) {
-                log.warn("Failed to delete temp file: {}", tempFile, e);
-            }
-        }
-
-        try {
-            Files.deleteIfExists(Paths.get(concatFilePath));
-        } catch (IOException e) {
-            log.warn("Failed to delete concat file: {}", concatFilePath, e);
-        }
     }
 }
