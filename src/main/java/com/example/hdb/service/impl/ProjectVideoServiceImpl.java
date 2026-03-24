@@ -51,9 +51,7 @@ public class ProjectVideoServiceImpl implements ProjectVideoService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
         
-        if (!project.getUser().getLoginId().equals(loginId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
+
         
         try {
             // 1. Scene 목록 조회 (scene_order 순서)

@@ -224,9 +224,7 @@ public class SceneVideoServiceImpl implements SceneVideoService {
         Scene scene = sceneRepository.findByIdAndProjectId(sceneId, projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SCENE_NOT_FOUND));
 
-        if (!project.getUser().getLoginId().equals(loginId)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
+
 
         List<SceneVideo> videos = sceneVideoRepository.findBySceneIdOrderByCreatedAtDesc(sceneId);
         
