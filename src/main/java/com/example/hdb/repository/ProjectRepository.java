@@ -5,6 +5,8 @@ import com.example.hdb.entity.Project;
 import com.example.hdb.entity.User;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -35,8 +37,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
      * 프로젝트 상세 조회 시 user 함께 로딩
      * LazyInitializationException 방지용
      */
-    @EntityGraph(attributePaths = {"user"})
-    Optional<Project> findByIdWithUser(Long id);
+    @Query("SELECT p FROM Project p LEFT JOIN FETCH p.user WHERE p.id = :id")
+    Optional<Project> findByIdWithUser(@Param("id") Long id);
 
     /**
      * 특정 유저의 특정 프로젝트 조회 시 user 함께 로딩

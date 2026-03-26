@@ -2,6 +2,7 @@ package com.example.hdb.service.impl;
 
 import com.example.hdb.dto.request.ImageEditCompleteRequest;
 import com.example.hdb.dto.request.SceneImageEditAiRequest;
+import com.example.hdb.dto.response.ImageGenerationResult;
 import com.example.hdb.dto.response.SceneImageResponse;
 import com.example.hdb.entity.Project;
 import com.example.hdb.entity.Scene;
@@ -61,7 +62,7 @@ public class SceneImageServiceImpl implements SceneImageService {
     private String openaiApiKey;
 
     // ──────────────────────────────────────────
-    // 이미지 생성
+    // ★★★ 이미지 생성 (revised_prompt 기반 일관성 보장) ★★★
     // ──────────────────────────────────────────
 
     @Override
@@ -74,11 +75,24 @@ public class SceneImageServiceImpl implements SceneImageService {
 
         validateProjectOwnership(scene.getProject(), loginId);
 
-        String stylePrefix = buildStylePrefix(scene.getProject());
+        // ★★★ 1단계: 프로젝트의 첫 번째 씬의 revised_prompt 찾기 ★★★
+        String baseRevisedPrompt = findProjectBaseRevisedPrompt(projectId, sceneId);
 
-        String imagePrompt = buildRealImagePrompt(scene, stylePrefix);
+        String consistentStylePrefix = buildConsistentStylePrefix(scene.getProject());
+        String imagePrompt;
+
+        if (baseRevisedPrompt == null) {
+            // 첫 번째 씬 → 일반 프롬프트 사용
+            imagePrompt = buildConsistentImagePrompt(scene, consistentStylePrefix);
+            log.info("=== FIRST SCENE: Using original prompt ===");
+        } else {
+            // 두 번째 이후 씬 → revised_prompt 기반으로 씬 내용만 교체
+            imagePrompt = buildPromptWithRevisedBase(scene, baseRevisedPrompt);
+            log.info("=== SUBSEQUENT SCENE: Using revised prompt base ===");
+        }
+
         if (imagePrompt == null || imagePrompt.isBlank()) {
-            log.error("Scene image prompt is null or empty after normalization");
+            log.error("Scene image prompt is null or empty");
             throw new BusinessException(ErrorCode.SCENE_IMAGE_PROMPT_NOT_FOUND);
         }
 
@@ -87,8 +101,8 @@ public class SceneImageServiceImpl implements SceneImageService {
                 .orElse(0) + 1;
 
         log.info("Next image number: {}", nextImageNumber);
-        log.info("Style prefix: {}", stylePrefix);
-        log.info("Final image prompt: {}", imagePrompt);
+        log.info("Base revised prompt: {}", baseRevisedPrompt != null ? truncate(baseRevisedPrompt, 100) : "null");
+        log.info("Final image prompt: {}", truncate(imagePrompt, 150));
 
         SceneImage sceneImage = SceneImage.builder()
                 .scene(scene)
@@ -96,6 +110,7 @@ public class SceneImageServiceImpl implements SceneImageService {
                 .imageUrl(null)
                 .editedImageUrl(null)
                 .imagePrompt(imagePrompt)
+                .revisedPrompt(null)  // 생성 후 저장됨
                 .openaiImageId(null)
                 .status(SceneImage.ImageStatus.GENERATING)
                 .build();
@@ -105,21 +120,24 @@ public class SceneImageServiceImpl implements SceneImageService {
 
         try {
             log.info("=== CALLING OPENAI IMAGE API ===");
-            String tempImageUrl = openAIService.generateImage(imagePrompt);
+            ImageGenerationResult result = openAIService.generateImage(imagePrompt);
 
-            if (tempImageUrl == null || tempImageUrl.isBlank()) {
+            if (result.getImageUrl() == null || result.getImageUrl().isBlank()) {
                 throw new RuntimeException("AI returned empty imageUrl");
             }
-            log.info("OpenAI temp URL: {}", tempImageUrl);
 
-            String permanentUrl = uploadUrlToCloudinary(tempImageUrl, sceneId, nextImageNumber, "generated");
+            log.info("Generated image URL: {}", result.getImageUrl());
+            log.info("Revised prompt from DALL-E: {}", result.getRevisedPrompt());
+
+            String permanentUrl = uploadUrlToCloudinary(result.getImageUrl(), sceneId, nextImageNumber, "generated");
             log.info("Cloudinary permanent URL: {}", permanentUrl);
 
             savedImage.setImageUrl(permanentUrl);
+            savedImage.setRevisedPrompt(result.getRevisedPrompt());  // ★★★ revised_prompt 저장 ★★★
             savedImage.setStatus(SceneImage.ImageStatus.READY);
             SceneImage completedImage = sceneImageRepository.save(savedImage);
 
-            log.info("IMAGE SAVED WITH PERMANENT URL - sceneId: {}, imageId: {}, url: {}",
+            log.info("IMAGE SAVED - sceneId: {}, imageId: {}, url: {}",
                     sceneId, completedImage.getId(), completedImage.getImageUrl());
 
             return toResponse(completedImage, false);
@@ -137,6 +155,101 @@ public class SceneImageServiceImpl implements SceneImageService {
 
             return toResponse(completedImage, true);
         }
+    }
+
+    /**
+     * 프로젝트의 첫 번째 씬의 revised_prompt 찾기
+     * - sceneOrder가 가장 작은 씬의 revised_prompt 반환
+     * - 없으면 null (이 씬이 첫 번째)
+     */
+    private String findProjectBaseRevisedPrompt(Long projectId, Long currentSceneId) {
+        try {
+            Scene currentScene = sceneRepository.findById(currentSceneId).orElse(null);
+            if (currentScene == null) {
+                return null;
+            }
+
+            Integer currentOrder = currentScene.getSceneOrder();
+
+            // 현재 씬보다 order가 작은 씬들 중 이미지가 있는 씬 찾기
+            List<Scene> previousScenes = sceneRepository.findByProjectIdOrderBySceneOrderAsc(projectId);
+
+            for (Scene scene : previousScenes) {
+                if (scene.getSceneOrder() < currentOrder) {
+                    // 이 씬의 첫 번째 이미지의 revised_prompt 찾기
+                    List<SceneImage> images = sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId());
+                    if (!images.isEmpty() && images.get(0).getRevisedPrompt() != null) {
+                        String revisedPrompt = images.get(0).getRevisedPrompt();
+                        log.info("Found base revised_prompt from scene {} (order {})",
+                                scene.getId(), scene.getSceneOrder());
+                        return revisedPrompt;
+                    }
+                }
+            }
+
+            log.info("No base revised_prompt found - this is the first scene image");
+            return null;
+
+        } catch (Exception e) {
+            log.warn("Failed to find base revised_prompt", e);
+            return null;
+        }
+    }
+
+    /**
+     * revised_prompt를 기반으로 씬 내용만 교체한 프롬프트 생성
+     *
+     * 전략:
+     * 1. revised_prompt에서 캐릭터/스타일 묘사 추출
+     * 2. 현재 씬의 동작/상황만 결합
+     */
+    private String buildPromptWithRevisedBase(Scene scene, String baseRevisedPrompt) {
+        String sceneSummary = scene.getSummary() != null ? scene.getSummary().trim() : "";
+
+        // revised_prompt는 이미 DALL-E가 만든 매우 상세한 캐릭터 묘사
+        // 이것을 그대로 사용하되, 마지막에 씬의 동작만 추가
+
+        // revised_prompt에서 마지막 문장(일반적으로 동작/상황 묘사) 제거
+        String characterDescription = extractCharacterDescription(baseRevisedPrompt);
+
+        // 씬의 새로운 동작 추가
+        String newPrompt = characterDescription + " " + sceneSummary;
+
+        log.info("Built prompt from revised base:");
+        log.info("  Character part: {}", truncate(characterDescription, 80));
+        log.info("  Scene part: {}", sceneSummary);
+
+        return sanitizePrompt(newPrompt);
+    }
+
+    /**
+     * revised_prompt에서 캐릭터/스타일 묘사 부분 추출
+     * (마지막 문장은 보통 동작/상황이므로 제거)
+     */
+    private String extractCharacterDescription(String revisedPrompt) {
+        if (revisedPrompt == null || revisedPrompt.isBlank()) {
+            return "";
+        }
+
+        // 마지막 문장 제거 (보통 동작/상황 묘사)
+        // "A cute yellow kitten with blue eyes, fluffy fur. The kitten is sleeping on a pink blanket."
+        // → "A cute yellow kitten with blue eyes, fluffy fur."
+
+        String[] sentences = revisedPrompt.split("\\. ");
+        if (sentences.length <= 1) {
+            return revisedPrompt;  // 문장이 하나면 그대로 반환
+        }
+
+        // 마지막 문장 제외하고 결합
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < sentences.length - 1; i++) {
+            result.append(sentences[i]);
+            if (i < sentences.length - 2) {
+                result.append(". ");
+            }
+        }
+
+        return result.toString().trim();
     }
 
     // ──────────────────────────────────────────
@@ -411,45 +524,108 @@ public class SceneImageServiceImpl implements SceneImageService {
     }
 
     // ──────────────────────────────────────────
-    // PRIVATE: 공통 스타일 prefix 생성
+    // ★★★ 핵심: 일관성 있는 스타일 Prefix 구축 ★★★
     // ──────────────────────────────────────────
 
-    private String buildStylePrefix(Project project) {
+    /**
+     * 프로젝트 전체에서 캐릭터/배경/스타일 일관성을 보장하는 프롬프트 prefix 생성
+     * 모든 씬에서 동일한 캐릭터 외형, 배경, 그림체를 유지하도록 강제
+     */
+    private String buildConsistentStylePrefix(Project project) {
         StringBuilder prefix = new StringBuilder();
-        prefix.append("IMPORTANT: maintain consistent character appearance and world throughout all scenes. ");
+
+        // 1. 일관성 강조 (최우선)
+        prefix.append("CRITICAL: All scenes must maintain EXACT same character appearance, facial features, clothing, hair style, body proportions, and art style. ");
+        prefix.append("Characters must be IDENTICAL across all scenes - same face, same outfit, same design. ");
 
         try {
             var planAnalysis = planningService.getLatestPlanAnalysis(project.getId());
             if (planAnalysis != null && planAnalysis.getProjectCore() != null) {
                 var core = planAnalysis.getProjectCore();
 
+                // 2. 메인 캐릭터 상세 정의
                 if (core.getMainCharacter() != null && !core.getMainCharacter().isBlank()) {
-                    prefix.append("main character: ").append(core.getMainCharacter())
-                            .append(" (must look identical in every scene), ");
+                    prefix.append("Main character: ").append(core.getMainCharacter())
+                            .append(" - MUST look EXACTLY the same in every scene (same face, same hair, same clothes, same body type). ");
                 }
+
+                // 3. 보조 캐릭터 상세 정의
                 if (core.getSubCharacters() != null && !core.getSubCharacters().isEmpty()) {
-                    prefix.append("sub characters: ")
+                    prefix.append("Supporting characters: ")
                             .append(String.join(", ", core.getSubCharacters()))
-                            .append(" (must look identical in every scene), ");
+                            .append(" - MUST maintain EXACT same appearance in all scenes. ");
                 }
+
+                // 4. 배경 세계관 고정
                 if (core.getBackgroundWorld() != null && !core.getBackgroundWorld().isBlank()) {
-                    prefix.append("world setting: ").append(core.getBackgroundWorld()).append(", ");
+                    prefix.append("World setting: ").append(core.getBackgroundWorld())
+                            .append(" - consistent environment and atmosphere across all scenes. ");
+                }
+
+                // 5. 스토리라인 컨텍스트 (선택적)
+                if (core.getStoryLine() != null && !core.getStoryLine().isBlank()) {
+                    // 스토리라인에서 핵심 비주얼 요소 추출
+                    prefix.append("Story context: ").append(truncate(core.getStoryLine(), 100)).append(". ");
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to load plan analysis for style prefix, using project info only", e);
         }
 
+        // 6. 프로젝트 아트 스타일 강조
         if (project.getStyle() != null && !project.getStyle().isBlank()) {
-            prefix.append("art style: ").append(project.getStyle())
-                    .append(" (consistent style across all scenes), ");
-        }
-        if (project.getRatio() != null && !project.getRatio().isBlank()) {
-            prefix.append("aspect ratio: ").append(project.getRatio()).append(", ");
+            prefix.append("Art style: ").append(project.getStyle())
+                    .append(" - MUST be consistent across ALL scenes (same drawing style, same color palette, same rendering technique). ");
         }
 
-        prefix.append("same character design, same color palette, same art style in every scene");
-        return prefix.toString().trim();
+        // 7. 화면 비율
+        if (project.getRatio() != null && !project.getRatio().isBlank()) {
+            prefix.append("Aspect ratio: ").append(project.getRatio()).append(". ");
+        }
+
+        // 8. 최종 일관성 재강조
+        prefix.append("REMEMBER: Same character design, same facial features, same outfits, same color scheme, same art style in EVERY scene. ");
+        prefix.append("Do NOT change character appearance, facial structure, clothing, or visual style between scenes. ");
+
+        String result = prefix.toString().trim();
+        log.info("Built consistent style prefix (length={}): {}", result.length(), truncate(result, 200));
+        return result;
+    }
+
+    /**
+     * 씬별 프롬프트 + 일관성 prefix 결합
+     */
+    private String buildConsistentImagePrompt(Scene scene, String consistentStylePrefix) {
+        String rawPrompt = scene.getImagePrompt();
+        String summary = scene.getSummary() != null ? scene.getSummary().trim() : "";
+        String optionalElements = scene.getOptionalElements() != null ? scene.getOptionalElements().trim() : "";
+
+        // generic 프롬프트 감지
+        boolean genericPrompt = rawPrompt == null
+                || rawPrompt.isBlank()
+                || rawPrompt.toLowerCase().contains("standard scene")
+                || rawPrompt.toLowerCase().contains("basic lighting")
+                || rawPrompt.toLowerCase().contains("basic composition");
+
+        StringBuilder sceneSpecificPrompt = new StringBuilder();
+
+        if (!genericPrompt) {
+            sceneSpecificPrompt.append(sanitizePrompt(rawPrompt));
+        } else {
+            // generic한 경우 씬 정보로 구체화
+            if (!summary.isBlank()) {
+                sceneSpecificPrompt.append(summary);
+            }
+            if (!optionalElements.isBlank() && !"{}".equals(optionalElements)) {
+                sceneSpecificPrompt.append(", scene elements: ").append(optionalElements);
+            }
+            sceneSpecificPrompt.append(", cinematic composition, detailed, high quality");
+        }
+
+        // ★★★ 최종 프롬프트: 일관성 prefix + 씬 구체 내용 ★★★
+        String finalPrompt = consistentStylePrefix + " | Scene: " + sceneSpecificPrompt.toString();
+
+        return sanitizePrompt(finalPrompt);
     }
 
     // ──────────────────────────────────────────
@@ -604,38 +780,6 @@ public class SceneImageServiceImpl implements SceneImageService {
         return response;
     }
 
-    private String buildRealImagePrompt(Scene scene, String stylePrefix) {
-        String rawPrompt = scene.getImagePrompt();
-        String summary = scene.getSummary() != null ? scene.getSummary().trim() : "";
-        String optionalElements = scene.getOptionalElements() != null ? scene.getOptionalElements().trim() : "";
-
-        boolean genericPrompt = rawPrompt == null
-                || rawPrompt.isBlank()
-                || rawPrompt.toLowerCase().contains("standard scene")
-                || rawPrompt.toLowerCase().contains("basic lighting")
-                || rawPrompt.toLowerCase().contains("basic composition");
-
-        String scenePrompt;
-        if (!genericPrompt) {
-            scenePrompt = sanitizePrompt(rawPrompt);
-        } else {
-            StringBuilder prompt = new StringBuilder();
-            if (!summary.isBlank()) {
-                prompt.append(summary).append(", ");
-            }
-            if (!optionalElements.isBlank() && !"{}".equals(optionalElements)) {
-                prompt.append("scene design: ").append(optionalElements).append(", ");
-            }
-            prompt.append("warm soft lighting, cinematic composition, high detail, 4k");
-            scenePrompt = sanitizePrompt(prompt.toString());
-        }
-
-        if (stylePrefix != null && !stylePrefix.isBlank()) {
-            return sanitizePrompt(stylePrefix + ", " + scenePrompt);
-        }
-        return scenePrompt;
-    }
-
     private String sanitizePrompt(String prompt) {
         if (prompt == null) return "";
         return prompt.replace("null", " ").replaceAll("\\s+", " ").trim();
@@ -656,5 +800,10 @@ public class SceneImageServiceImpl implements SceneImageService {
         if (imageUrl == null) return false;
         return imageUrl.contains("fallback-image-service.com")
                 || imageUrl.contains("picsum.photos");
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) return text;
+        return text.substring(0, maxLength) + "...";
     }
 }

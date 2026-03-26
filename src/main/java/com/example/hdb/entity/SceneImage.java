@@ -31,12 +31,15 @@ public class SceneImage extends BaseTimeEntity {
 
     @Column(length = 500)
     private String imageUrl;
-    
+
     @Column(name = "edited_image_url", length = 500)
     private String editedImageUrl;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String imagePrompt;
+
+    @Column(columnDefinition = "TEXT")
+    private String revisedPrompt;
 
     @Column(length = 100)
     private String openaiImageId;

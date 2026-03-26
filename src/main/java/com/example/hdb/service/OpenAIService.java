@@ -3,6 +3,7 @@ package com.example.hdb.service;
 import com.example.hdb.dto.common.OptionalElements;
 import com.example.hdb.dto.openai.OpenAIRequest;
 import com.example.hdb.dto.openai.OpenAIResponse;
+import com.example.hdb.dto.response.ImageGenerationResult;
 import com.example.hdb.dto.response.SceneDesignResponse;
 import com.example.hdb.exception.BusinessException;
 import com.example.hdb.exception.ErrorCode;
@@ -403,7 +404,11 @@ public class OpenAIService {
     // 이미지 생성 (DALL-E 3)
     // ──────────────────────────────────────────
 
-    public String generateImage(String prompt) {
+    /**
+     * DALL-E 3 이미지 생성
+     * @return ImageGenerationResult (imageUrl + revisedPrompt)
+     */
+    public ImageGenerationResult generateImage(String prompt) {
         log.info("=== Image Generation Started ===");
         log.info("Image Prompt: {}", prompt);
 
@@ -440,11 +445,28 @@ public class OpenAIService {
                 JsonNode dataNode = responseJson.get("data");
 
                 if (dataNode != null && dataNode.isArray() && dataNode.size() > 0) {
-                    JsonNode urlNode = dataNode.get(0).get("url");
-                    if (urlNode != null && !urlNode.asText().isBlank()) {
-                        String realImageUrl = urlNode.asText();
-                        log.info("REAL IMAGE GENERATED - url: {}", realImageUrl);
-                        return realImageUrl;
+                    JsonNode firstItem = dataNode.get(0);
+
+                    // URL 추출
+                    JsonNode urlNode = firstItem.get("url");
+                    String imageUrl = (urlNode != null && !urlNode.asText().isBlank())
+                            ? urlNode.asText()
+                            : null;
+
+                    // revised_prompt 추출 (DALL-E 3가 실제 사용한 프롬프트)
+                    JsonNode revisedNode = firstItem.get("revised_prompt");
+                    String revisedPrompt = (revisedNode != null && !revisedNode.asText().isBlank())
+                            ? revisedNode.asText()
+                            : null;
+
+                    if (imageUrl != null) {
+                        log.info("REAL IMAGE GENERATED - url: {}", imageUrl);
+                        log.info("REVISED PROMPT: {}", revisedPrompt);
+
+                        return ImageGenerationResult.builder()
+                                .imageUrl(imageUrl)
+                                .revisedPrompt(revisedPrompt)
+                                .build();
                     }
                 }
             }
@@ -457,7 +479,11 @@ public class OpenAIService {
             log.warn("OpenAI DALL-E 실패, fallback 이미지 사용: {}", e.getMessage());
             String timestamp = String.valueOf(System.currentTimeMillis());
             String promptHash = String.valueOf(prompt.hashCode());
-            return String.format("https://fallback-image-service.com/generated/%s_%s.jpg", timestamp, promptHash);
+
+            return ImageGenerationResult.builder()
+                    .imageUrl(String.format("https://fallback-image-service.com/generated/%s_%s.jpg", timestamp, promptHash))
+                    .revisedPrompt(null)
+                    .build();
         }
     }
 

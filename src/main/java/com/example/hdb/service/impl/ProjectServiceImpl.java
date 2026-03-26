@@ -129,7 +129,6 @@ public class ProjectServiceImpl implements ProjectService {
     /**
      * 프로젝트 씬 생성
      */
-    @Override
     @Transactional
     public ApiResponse<List<String>> generateProjectScenes(Long projectId, SceneGenerationRequest request) {
         log.info("Generating project scenes for projectId: {}, sceneIdea: {}", projectId, request.getSceneIdea());

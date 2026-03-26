@@ -66,7 +66,8 @@ public class PlanningService {
             JsonNode plansNode = root.path("plans");
 
             if (!plansNode.isArray() || plansNode.isEmpty()) {
-                throw new BusinessException(ErrorCode.LLM_GENERATION_FAILED);
+                log.warn("Plans node is not array or empty, using fallback");
+                throw new RuntimeException("Invalid plans structure");
             }
 
             List<PlanningGenerateResponse.Plan> plans = objectMapper.convertValue(
@@ -74,24 +75,30 @@ public class PlanningService {
                     new TypeReference<List<PlanningGenerateResponse.Plan>>() {}
             );
 
+            // ★★★ 추가 검증: 3개가 아니면 Fallback ★★★
+            if (plans.size() != 3) {
+                log.warn("Expected 3 plans but got {}, using fallback", plans.size());
+                throw new RuntimeException("Expected 3 plans but got " + plans.size());
+            }
+
             log.info("=== PARSING RESULT (PLANNING) ===");
             for (PlanningGenerateResponse.Plan plan : plans) {
                 log.info("planId={}, title={}, mainCharacter={}",
                         plan.getPlanId(),
                         plan.getTitle(),
                         plan.getCoreElements() != null ? plan.getCoreElements().getMainCharacter() : null);
-                
+
                 // storyLine 상세 로그
                 if (plan.getStoryLine() != null) {
                     log.info("=== LLM RAW RESPONSE ===");
                     log.info("planId={}, storyLine length: {} chars", plan.getPlanId(), plan.getStoryLine().length());
-                    log.info("planId={}, storyLine preview: {}...", plan.getPlanId(), 
+                    log.info("planId={}, storyLine preview: {}...", plan.getPlanId(),
                             plan.getStoryLine().length() > 100 ? plan.getStoryLine().substring(0, 100) : plan.getStoryLine());
-                    
+
                     // 문장 수 계산
                     String[] sentences = plan.getStoryLine().split("(?<=[.!?])\\s+");
                     log.info("planId={}, sentence count: {}", plan.getPlanId(), sentences.length);
-                    
+
                     log.info("=== FINAL STORED STORYLINE ===");
                     log.info("planId={}, full storyLine: {}", plan.getPlanId(), plan.getStoryLine());
                 }
@@ -105,9 +112,26 @@ public class PlanningService {
                     .build();
 
         } catch (Exception e) {
-            log.error("기획 생성 실패 - LLM 응답 파싱 오류: {}", e.getMessage(), e);
+            log.error("기획 생성 실패 - LLM 응답 파싱 오류, Fallback 사용: {}", e.getMessage());
             log.info("=== FALLBACK STATUS: true (LLM response parsing failed) ===");
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "기획 생성에 실패했습니다: " + e.getMessage());
+
+            // ★★★ Fallback: 3개 기획안 자동 생성 ★★★
+            List<PlanningGenerateResponse.Plan> fallbackPlans = buildDynamicFallbackPlans(
+                    userPrompt,
+                    project.getPurpose(),
+                    project.getDuration(),
+                    project.getRatio(),
+                    project.getStyle()
+            );
+
+            log.info("=== FALLBACK PLANS GENERATED ===");
+            log.info("Generated {} fallback plans", fallbackPlans.size());
+
+            return PlanningGenerateResponse.builder()
+                    .projectId(projectId)
+                    .selectedPlanId(project.getSelectedPlanId())
+                    .plans(fallbackPlans)
+                    .build();
         }
     }
 
@@ -209,7 +233,7 @@ public class PlanningService {
         }
 
         String response = null;
-        
+
         try {
             String planData = latestPlan.get().getPlanData();
             log.info("Latest plan_data JSON: {}", planData);
@@ -279,10 +303,10 @@ public class PlanningService {
             log.info("Input storyLine (from plan): {}", storyLine);
             log.info("Saved projectCore.storyLine: {}", projectCore.getStoryLine());
             log.info("StoryLine length: {} chars", storyLine.length());
-            
+
             savePlanAnalysis(projectId, planId, result);
             return result;
-            
+
         } catch (Exception e) {
             log.error("기획 분석 실패 - LLM 응답 파싱 오류: {}", e.getMessage(), e);
             log.info("=== FALLBACK STATUS: true (LLM response parsing failed) ===");
@@ -579,9 +603,9 @@ public class PlanningService {
                         .targetUseCase("감성 브랜딩 영상")
                         .storyLine(String.format(
                                 "%s은(는) %s에서 %s을(를) 마주한 순간, 처음에는 망설이고 불안해하지만 곧 자신감을 찾아 나선다. " +
-                                "주변의 %s은(는) 계속해서 도전을 앞에 두고, %s은(는) 여러 번의 실패와 좌절을 겪으며 지쳐가는 듯하다. " +
-                                "하지만 우연히 만난 %s은(는) 새로운 관점과 해결책을 제시해주며, %s은(는) 다시 일어서 마지막 도전을 시도한다. " +
-                                "마침내 %s을(를) 성공시키는 %s은(는) 주변의 모든 것을 변화시키고, 자신의 진정한 가능성을 발견하게 된다.", 
+                                        "주변의 %s은(는) 계속해서 도전을 앞에 두고, %s은(는) 여러 번의 실패와 좌절을 겪으며 지쳐가는 듯하다. " +
+                                        "하지만 우연히 만난 %s은(는) 새로운 관점과 해결책을 제시해주며, %s은(는) 다시 일어서 마지막 도전을 시도한다. " +
+                                        "마침내 %s을(를) 성공시키는 %s은(는) 주변의 모든 것을 변화시키고, 자신의 진정한 가능성을 발견하게 된다.",
                                 mainChar, background, situation, background, mainChar, "브랜드 제품", mainChar, situation, mainChar))
                         .coreElements(PlanningGenerateResponse.CoreElements.builder()
                                 .purpose(purpose)
@@ -605,10 +629,10 @@ public class PlanningService {
                         .targetUseCase("바이럴 숏폼 영상")
                         .storyLine(String.format(
                                 "%s은(는) %s의 중심에서 갑자기 %s을(를) 마주하게 된다. " +
-                                "순간적으로 당황하지만, %s은(는) 즉시 자신의 능력을 발휘하며 역동적으로 대응하기 시작한다. " +
-                                "%s은(는) 빠른 움직임으로 장애물을 극복하고, 주변의 모든 것을 자신의 에너지로 움직이게 만든다. " +
-                                "도전이 거세질수록 %s은(는) 더욱 강력해지며, 마침내 %s을(를) 완벽하게 해결한다. " +
-                                "성공의 순간, %s은(는) 주변을 환화시키며 새로운 에너지를 뿜어낸다.", 
+                                        "순간적으로 당황하지만, %s은(는) 즉시 자신의 능력을 발휘하며 역동적으로 대응하기 시작한다. " +
+                                        "%s은(는) 빠른 움직임으로 장애물을 극복하고, 주변의 모든 것을 자신의 에너지로 움직이게 만든다. " +
+                                        "도전이 거세질수록 %s은(는) 더욱 강력해지며, 마침내 %s을(를) 완벽하게 해결한다. " +
+                                        "성공의 순간, %s은(는) 주변을 환화시키며 새로운 에너지를 뿜어낸다.",
                                 mainChar, background, situation, mainChar, mainChar, mainChar, situation, mainChar))
                         .coreElements(PlanningGenerateResponse.CoreElements.builder()
                                 .purpose(purpose)
@@ -632,10 +656,10 @@ public class PlanningService {
                         .targetUseCase("바이럴 중심 캐릭터 영상")
                         .storyLine(String.format(
                                 "%s은(는) %s에서 평범한 일상을 보내고 있다가, 갑자기 %s을(를) 마주하게 된다. " +
-                                "%s은(는) 엉뚱한 방식으로 상황을 해결하려 하지만, 계속해서 더 웃긴 상황으로 만든다. " +
-                                "주변의 모든 것이 %s의 실수를 증폭시키고, 상황은 점점 더 코믹하게 변해간다. " +
-                                "하지만 우연히 발견한 %s은(는) 예상치 못한 해결책이 되어, 모든 것을 역전시킨다. " +
-                                "%s은(는) 결국 웃음으로 문제를 해결하고, 주변 모두를 즐겁게 만든다.", 
+                                        "%s은(는) 엉뚱한 방식으로 상황을 해결하려 하지만, 계속해서 더 웃긴 상황으로 만든다. " +
+                                        "주변의 모든 것이 %s의 실수를 증폭시키고, 상황은 점점 더 코믹하게 변해간다. " +
+                                        "하지만 우연히 발견한 %s은(는) 예상치 못한 해결책이 되어, 모든 것을 역전시킨다. " +
+                                        "%s은(는) 결국 웃음으로 문제를 해결하고, 주변 모두를 즐겁게 만든다.",
                                 mainChar, background, situation, mainChar, mainChar, "브랜드 제품", mainChar))
                         .coreElements(PlanningGenerateResponse.CoreElements.builder()
                                 .purpose(purpose)
