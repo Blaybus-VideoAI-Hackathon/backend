@@ -62,7 +62,7 @@ public class SceneImageServiceImpl implements SceneImageService {
     private String openaiApiKey;
 
     // ──────────────────────────────────────────
-    // ★★★ 이미지 생성 (revised_prompt 기반 일관성 보장) ★★★
+    // ★★★ 이미지 생성 (DALL-E 2 Edit 기반 일관성 보장) ★★★
     // ──────────────────────────────────────────
 
     @Override
@@ -75,21 +75,11 @@ public class SceneImageServiceImpl implements SceneImageService {
 
         validateProjectOwnership(scene.getProject(), loginId);
 
-        // ★★★ 1단계: 프로젝트의 첫 번째 씬의 revised_prompt 찾기 ★★★
-        String baseRevisedPrompt = findProjectBaseRevisedPrompt(projectId, sceneId);
+        // ★★★ 1단계: 프로젝트의 첫 번째 씬 이미지 URL 찾기 ★★★
+        String referenceImageUrl = findProjectReferenceImageUrl(projectId, sceneId);
 
         String consistentStylePrefix = buildConsistentStylePrefix(scene.getProject());
-        String imagePrompt;
-
-        if (baseRevisedPrompt == null) {
-            // 첫 번째 씬 → 일반 프롬프트 사용
-            imagePrompt = buildConsistentImagePrompt(scene, consistentStylePrefix);
-            log.info("=== FIRST SCENE: Using original prompt ===");
-        } else {
-            // 두 번째 이후 씬 → revised_prompt 기반으로 씬 내용만 교체
-            imagePrompt = buildPromptWithRevisedBase(scene, baseRevisedPrompt);
-            log.info("=== SUBSEQUENT SCENE: Using revised prompt base ===");
-        }
+        String imagePrompt = buildConsistentImagePrompt(scene, consistentStylePrefix);
 
         if (imagePrompt == null || imagePrompt.isBlank()) {
             log.error("Scene image prompt is null or empty");
@@ -101,7 +91,7 @@ public class SceneImageServiceImpl implements SceneImageService {
                 .orElse(0) + 1;
 
         log.info("Next image number: {}", nextImageNumber);
-        log.info("Base revised prompt: {}", baseRevisedPrompt != null ? truncate(baseRevisedPrompt, 100) : "null");
+        log.info("Reference image URL: {}", referenceImageUrl != null ? "Found" : "null (first scene)");
         log.info("Final image prompt: {}", truncate(imagePrompt, 150));
 
         SceneImage sceneImage = SceneImage.builder()
@@ -110,7 +100,7 @@ public class SceneImageServiceImpl implements SceneImageService {
                 .imageUrl(null)
                 .editedImageUrl(null)
                 .imagePrompt(imagePrompt)
-                .revisedPrompt(null)  // 생성 후 저장됨
+                .revisedPrompt(null)
                 .openaiImageId(null)
                 .status(SceneImage.ImageStatus.GENERATING)
                 .build();
@@ -119,21 +109,30 @@ public class SceneImageServiceImpl implements SceneImageService {
         log.info("SceneImage saved with GENERATING status: {}", savedImage.getId());
 
         try {
-            log.info("=== CALLING OPENAI IMAGE API ===");
-            ImageGenerationResult result = openAIService.generateImage(imagePrompt);
+            ImageGenerationResult result;
+
+            if (referenceImageUrl == null) {
+                // ★★★ 경우 1: 첫 번째 씬 → DALL-E 3로 생성 ★★★
+                log.info("=== GENERATING FIRST SCENE (DALL-E 3) ===");
+                result = openAIService.generateImage(imagePrompt);
+            } else {
+                // ★★★ 경우 2: 두 번째 이후 씬 → DALL-E 2 Edit로 참조 이미지 기반 생성 ★★★
+                log.info("=== GENERATING WITH REFERENCE IMAGE (DALL-E 2 Edit) ===");
+                result = generateImageWithDalle2Edit(referenceImageUrl, imagePrompt);
+            }
 
             if (result.getImageUrl() == null || result.getImageUrl().isBlank()) {
                 throw new RuntimeException("AI returned empty imageUrl");
             }
 
             log.info("Generated image URL: {}", result.getImageUrl());
-            log.info("Revised prompt from DALL-E: {}", result.getRevisedPrompt());
+            log.info("Revised prompt: {}", result.getRevisedPrompt());
 
             String permanentUrl = uploadUrlToCloudinary(result.getImageUrl(), sceneId, nextImageNumber, "generated");
             log.info("Cloudinary permanent URL: {}", permanentUrl);
 
             savedImage.setImageUrl(permanentUrl);
-            savedImage.setRevisedPrompt(result.getRevisedPrompt());  // ★★★ revised_prompt 저장 ★★★
+            savedImage.setRevisedPrompt(result.getRevisedPrompt());
             savedImage.setStatus(SceneImage.ImageStatus.READY);
             SceneImage completedImage = sceneImageRepository.save(savedImage);
 
@@ -158,11 +157,11 @@ public class SceneImageServiceImpl implements SceneImageService {
     }
 
     /**
-     * 프로젝트의 첫 번째 씬의 revised_prompt 찾기
-     * - sceneOrder가 가장 작은 씬의 revised_prompt 반환
+     * 프로젝트의 참조 이미지 URL 찾기
+     * - sceneOrder가 가장 작은 씬의 첫 번째 이미지 URL 반환
      * - 없으면 null (이 씬이 첫 번째)
      */
-    private String findProjectBaseRevisedPrompt(Long projectId, Long currentSceneId) {
+    private String findProjectReferenceImageUrl(Long projectId, Long currentSceneId) {
         try {
             Scene currentScene = sceneRepository.findById(currentSceneId).orElse(null);
             if (currentScene == null) {
@@ -176,81 +175,169 @@ public class SceneImageServiceImpl implements SceneImageService {
 
             for (Scene scene : previousScenes) {
                 if (scene.getSceneOrder() < currentOrder) {
-                    // 이 씬의 첫 번째 이미지의 revised_prompt 찾기
+                    // 이 씬의 첫 번째 이미지 찾기
                     List<SceneImage> images = sceneImageRepository.findBySceneIdOrderByImageNumberAsc(scene.getId());
-                    if (!images.isEmpty() && images.get(0).getRevisedPrompt() != null) {
-                        String revisedPrompt = images.get(0).getRevisedPrompt();
-                        log.info("Found base revised_prompt from scene {} (order {})",
+                    if (!images.isEmpty() && images.get(0).getImageUrl() != null) {
+                        String refUrl = images.get(0).getImageUrl();
+                        log.info("Found reference image from scene {} (order {})",
                                 scene.getId(), scene.getSceneOrder());
-                        return revisedPrompt;
+                        return refUrl;
                     }
                 }
             }
 
-            log.info("No base revised_prompt found - this is the first scene image");
+            log.info("No reference image found - this is the first scene image");
             return null;
 
         } catch (Exception e) {
-            log.warn("Failed to find base revised_prompt", e);
+            log.warn("Failed to find reference image", e);
             return null;
         }
     }
 
     /**
-     * revised_prompt를 기반으로 씬 내용만 교체한 프롬프트 생성
-     *
-     * 전략:
-     * 1. revised_prompt에서 캐릭터/스타일 묘사 추출
-     * 2. 현재 씬의 동작/상황만 결합
+     * DALL-E 2 Edit API로 참조 이미지 기반 생성
+     * - 마스크 없이 이미지 전체를 참조로 사용
      */
-    private String buildPromptWithRevisedBase(Scene scene, String baseRevisedPrompt) {
-        String sceneSummary = scene.getSummary() != null ? scene.getSummary().trim() : "";
+    private ImageGenerationResult generateImageWithDalle2Edit(String referenceImageUrl, String prompt) {
+        log.info("=== Generating with DALL-E 2 Edit ===");
+        log.info("Reference URL: {}", referenceImageUrl);
+        log.info("Prompt: {}", prompt);
 
-        // revised_prompt는 이미 DALL-E가 만든 매우 상세한 캐릭터 묘사
-        // 이것을 그대로 사용하되, 마지막에 씬의 동작만 추가
+        if (openaiApiKey == null || openaiApiKey.isBlank()) {
+            throw new RuntimeException("OPENAI_API_KEY is not configured");
+        }
 
-        // revised_prompt에서 마지막 문장(일반적으로 동작/상황 묘사) 제거
-        String characterDescription = extractCharacterDescription(baseRevisedPrompt);
+        try {
+            // 참조 이미지 다운로드
+            byte[] referenceBytes = downloadImageBytes(referenceImageUrl);
 
-        // 씬의 새로운 동작 추가
-        String newPrompt = characterDescription + " " + sceneSummary;
+            // PNG로 변환 (DALL-E 2 Edit는 PNG만 지원)
+            byte[] pngBytes = convertToPng(referenceBytes);
 
-        log.info("Built prompt from revised base:");
-        log.info("  Character part: {}", truncate(characterDescription, 80));
-        log.info("  Scene part: {}", sceneSummary);
+            // 투명 마스크 생성 (전체 이미지 편집)
+            byte[] maskBytes = createTransparentMask(1024, 1024);
 
-        return sanitizePrompt(newPrompt);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(openaiApiKey);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            ByteArrayResource imageResource = new ByteArrayResource(pngBytes) {
+                @Override
+                public String getFilename() {
+                    return "image.png";
+                }
+            };
+
+            ByteArrayResource maskResource = new ByteArrayResource(maskBytes) {
+                @Override
+                public String getFilename() {
+                    return "mask.png";
+                }
+            };
+
+            // DALL-E 2 Edit API 호출
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("image", imageResource);
+            body.add("mask", maskResource);
+            body.add("prompt", prompt);
+            body.add("n", 1);
+            body.add("size", "1024x1024");
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    OPENAI_IMAGE_EDIT_URL,
+                    requestEntity,
+                    Map.class
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new RuntimeException("DALL-E 2 Edit failed: " + response.getStatusCode());
+            }
+
+            // URL 추출
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> data = (List<Map<String, Object>>) response.getBody().get("data");
+
+            if (data == null || data.isEmpty()) {
+                throw new RuntimeException("No image data in response");
+            }
+
+            String imageUrl = (String) data.get(0).get("url");
+
+            if (imageUrl == null || imageUrl.isBlank()) {
+                throw new RuntimeException("Empty image URL in response");
+            }
+
+            log.info("Successfully generated image with DALL-E 2 Edit: {}", imageUrl);
+
+            return ImageGenerationResult.builder()
+                    .imageUrl(imageUrl)
+                    .revisedPrompt(prompt) // DALL-E 2 Edit는 revised_prompt 미제공
+                    .build();
+
+        } catch (Exception e) {
+            log.error("DALL-E 2 Edit failed, falling back to DALL-E 3", e);
+            // 실패 시 DALL-E 3로 폴백
+            return openAIService.generateImage(prompt);
+        }
     }
 
     /**
-     * revised_prompt에서 캐릭터/스타일 묘사 부분 추출
-     * (마지막 문장은 보통 동작/상황이므로 제거)
+     * 투명 마스크 생성 (전체 이미지 편집용)
      */
-    private String extractCharacterDescription(String revisedPrompt) {
-        if (revisedPrompt == null || revisedPrompt.isBlank()) {
-            return "";
+    private byte[] createTransparentMask(int width, int height) {
+        try {
+            java.awt.image.BufferedImage mask = new java.awt.image.BufferedImage(
+                    width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+
+            // 전체를 투명하게 (알파 채널 0)
+            java.awt.Graphics2D g2d = mask.createGraphics();
+            g2d.setComposite(java.awt.AlphaComposite.Clear);
+            g2d.fillRect(0, 0, width, height);
+            g2d.dispose();
+
+            // PNG로 변환
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(mask, "PNG", baos);
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create transparent mask", e);
         }
-
-        // 마지막 문장 제거 (보통 동작/상황 묘사)
-        // "A cute yellow kitten with blue eyes, fluffy fur. The kitten is sleeping on a pink blanket."
-        // → "A cute yellow kitten with blue eyes, fluffy fur."
-
-        String[] sentences = revisedPrompt.split("\\. ");
-        if (sentences.length <= 1) {
-            return revisedPrompt;  // 문장이 하나면 그대로 반환
-        }
-
-        // 마지막 문장 제외하고 결합
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < sentences.length - 1; i++) {
-            result.append(sentences[i]);
-            if (i < sentences.length - 2) {
-                result.append(". ");
-            }
-        }
-
-        return result.toString().trim();
     }
+
+    /**
+     * 이미지를 PNG로 변환
+     */
+    private byte[] convertToPng(byte[] imageBytes) {
+        try {
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(imageBytes);
+            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(bais);
+
+            // 1024x1024로 리사이즈
+            java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(
+                    1024, 1024, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g2d = resized.createGraphics();
+            g2d.drawImage(image, 0, 0, 1024, 1024, null);
+            g2d.dispose();
+
+            // PNG로 변환
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(resized, "PNG", baos);
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to convert image to PNG", e);
+        }
+    }
+
+    /**
+     * 프로젝트의 첫 번째 씬의 revised_prompt 찾기
+     * - sceneOrder가 가장 작은 씬의 revised_prompt 반환
+     * - 없으면 null (이 씬이 첫 번째)
+     */
 
     // ──────────────────────────────────────────
     // 조회
