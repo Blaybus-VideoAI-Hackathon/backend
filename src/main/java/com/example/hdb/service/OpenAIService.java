@@ -235,7 +235,9 @@ public class OpenAIService {
                 2. generic 표현 금지
                    - "기본 설계", "표준", "A standard scene..."
                 3. userDesignRequest를 실제 반영할 것
-                4. imagePrompt와 videoPrompt는 상세하게 작성
+                4. imagePrompt와 videoPrompt 작성 규칙:
+                   - imagePrompt: 단일 순간의 스냅샷만 묘사 (스토리 전개 금지, 한 문장으로)
+                   - videoPrompt: 시간 흐름에 따른 동작 묘사
                 5. 반드시 한국어로 작성하고 영어 금지
                 6. 반드시 JSON만 반환
 
@@ -373,8 +375,10 @@ public class OpenAIService {
                 imagePrompt와 videoPrompt를 생성하세요.
 
                 규칙:
-                1. imagePrompt는 정적인 장면 묘사
-                2. videoPrompt는 동적인 장면 묘사
+                1. imagePrompt: 단일 순간의 정지 화면만 묘사 (한 문장, 스냅샷 느낌)
+                   - 나쁜 예: "아이가 청소를 싫어하다가 도구를 발견하고 신나게 청소한다"
+                   - 좋은 예: "마법 빗자루를 들고 신나게 방을 청소하는 아이"
+                2. videoPrompt: 시간 흐름에 따른 동작과 변화 묘사 (스토리 전개 가능)
                 3. "A standard scene" 같은 generic 문장 금지
                 4. null, N/A 같은 표현 금지
                 5. 반드시 한국어로 작성하고 영어 금지

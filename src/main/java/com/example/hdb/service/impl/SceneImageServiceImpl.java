@@ -534,6 +534,11 @@ public class SceneImageServiceImpl implements SceneImageService {
     private String buildConsistentStylePrefix(Project project) {
         StringBuilder prefix = new StringBuilder();
 
+        // ★★★ 0. 단일 장면 강조 (웹툰 형식 방지) ★★★
+        prefix.append("IMPORTANT: Create a SINGLE SCENE image, NOT a comic strip or storyboard. ");
+        prefix.append("This must be ONE CONTINUOUS MOMENT, not multiple panels or frames. ");
+        prefix.append("Do NOT create split-screen, multi-panel, or sequential layout. ");
+
         // 1. 일관성 강조 (최우선)
         prefix.append("CRITICAL: All scenes must maintain EXACT same character appearance, facial features, clothing, hair style, body proportions, and art style. ");
         prefix.append("Characters must be IDENTICAL across all scenes - same face, same outfit, same design. ");
