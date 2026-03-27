@@ -22,4 +22,5 @@ public class SceneImageResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Boolean fallbackUsed; // fallback 사용 여부
+    private Boolean isEdited; // 수정 여부
 }

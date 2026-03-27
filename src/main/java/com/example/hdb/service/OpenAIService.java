@@ -139,6 +139,94 @@ public class OpenAIService {
         return response;
     }
 
+    /**
+     * 더 엄격한 포맷으로 정확히 3개의 기획안을 생성
+     * (재시도용 - generatePlanningWithSummary가 3개를 못 만들었을 때 사용)
+     */
+    public String generatePlanningWithStrictFormat(
+            String userPrompt,
+            String projectPurpose,
+            Integer duration,
+            String ratio,
+            String style
+    ) {
+        String systemPrompt = """
+                당신은 전문 숏폼 광고 기획자입니다.
+                
+                ★★★ 중요: 반드시 정확히 3개의 기획안을 JSON 형식으로 생성하세요 ★★★
+                
+                규칙:
+                1. 감성형, 액션형, 유머형 3가지 타입의 기획안 반드시 생성
+                2. 각 기획안의 planId는 1, 2, 3 순서대로 설정
+                3. plans 배열에는 정확히 3개의 객체만 포함
+                4. storyLine은 최소 6문장 이상의 구체적인 서술형
+                5. 구체적인 캐릭터, 배경, 사건을 명시
+                6. 모든 텍스트는 한국어로 작성
+                7. 반드시 JSON만 반환
+                
+                필수 JSON 구조:
+                {
+                  "plans": [
+                    {
+                      "planId": 1,
+                      "title": "감성 버전: ...",
+                      "focus": "감정이입과 공감",
+                      "displayText": "...",
+                      "recommendationReason": "...",
+                      "strengths": ["...", "...", "..."],
+                      "targetUseCase": "...",
+                      "storyLine": "최소 6문장 이상 (제목 없음)",
+                      "coreElements": {
+                        "purpose": "%s",
+                        "duration": %d,
+                        "ratio": "%s",
+                        "style": "%s",
+                        "mainCharacter": "...",
+                        "subCharacters": ["...", "..."],
+                        "backgroundWorld": "...",
+                        "storyFlow": "...",
+                        "storyLine": "..."
+                      }
+                    },
+                    {
+                      "planId": 2,
+                      "title": "액션 버전: ...",
+                      "focus": "역동성과 에너지",
+                      ...
+                    },
+                    {
+                      "planId": 3,
+                      "title": "유머 버전: ...",
+                      "focus": "유머와 반전",
+                      ...
+                    }
+                  ]
+                }
+                """.formatted(projectPurpose, duration, ratio, style);
+
+        String formattedUserPrompt = String.format("""
+                사용자 요청:
+                %s
+                
+                프로젝트 정보:
+                - purpose: %s
+                - duration: %d초
+                - ratio: %s
+                - style: %s
+                
+                위 요청을 바탕으로 정확히 3개의 기획안(감성형, 액션형, 유머형)을 생성하세요.
+                """, userPrompt, projectPurpose, duration, ratio, style);
+
+        String response = callOpenAI(systemPrompt, formattedUserPrompt);
+
+        log.info("=== STRICT FORMAT PLANNING GENERATION ===");
+        log.info("User Prompt: {}", userPrompt);
+        log.info("Project Info: purpose={}, duration={}, ratio={}, style={}", projectPurpose, duration, ratio, style);
+        log.info("OpenAI Raw Response: {}", response);
+
+        return response;
+    }
+
     // ──────────────────────────────────────────
     // 기획안 분석
     // ──────────────────────────────────────────
@@ -235,11 +323,17 @@ public class OpenAIService {
                 2. generic 표현 금지
                    - "기본 설계", "표준", "A standard scene..."
                 3. userDesignRequest를 실제 반영할 것
-                4. imagePrompt와 videoPrompt 작성 규칙:
-                   - imagePrompt: 단일 순간의 스냅샷만 묘사 (스토리 전개 금지, 한 문장으로)
-                   - videoPrompt: 시간 흐름에 따른 동작 묘사
-                5. 반드시 한국어로 작성하고 영어 금지
-                6. 반드시 JSON만 반환
+                4. ★★★ imagePrompt 작성 규칙 (매우 중요!) ★★★:
+                   - 반드시 20단어 이내로 작성
+                   - 단 하나의 짧은 문장만 사용
+                   - 스토리 전개, 시간 흐름, 여러 동작 묘사 절대 금지
+                   - 나쁜 예: "햇살이 비추는 농장에서 엄마 닭이 알을 품고 있다가 병아리들이 하나둘씩 걸어오고 서로 밀며 모여 앉는다"
+                   - 좋은 예: "엄마 닭과 병아리들이 푸른 들판을 함께 걷는 모습"
+                   - 좋은 예: "병아리들이 모이를 먹고 있는 장면"
+                   - 좋은 예: "엄마 닭이 병아리들을 품에 안고 쉬는 모습"
+                5. videoPrompt: 시간 흐름에 따른 동작 묘사 (긴 서술 가능)
+                6. 반드시 한국어로 작성하고 영어 금지
+                7. 반드시 JSON만 반환
 
                 주의: effects는 단순 문자열로 작성하세요. (배열 아님)
 
@@ -257,8 +351,8 @@ public class OpenAIService {
                     "backgroundCharacters": "...",
                     "environmentDetail": "..."
                   },
-                  "imagePrompt": "...",
-                  "videoPrompt": "..."
+                  "imagePrompt": "짧은 한 문장 (20단어 이내)",
+                  "videoPrompt": "긴 서술 가능"
                 }
                 """;
 
@@ -375,10 +469,15 @@ public class OpenAIService {
                 imagePrompt와 videoPrompt를 생성하세요.
 
                 규칙:
-                1. imagePrompt: 단일 순간의 정지 화면만 묘사 (한 문장, 스냅샷 느낌)
-                   - 나쁜 예: "아이가 청소를 싫어하다가 도구를 발견하고 신나게 청소한다"
+                1. ★★★ imagePrompt 작성 규칙 (매우 중요!) ★★★:
+                   - 반드시 20단어 이내로 작성
+                   - 단 하나의 짧은 문장만 사용
+                   - 스토리 전개, 시간 흐름, 여러 동작 묘사 절대 금지
+                   - 나쁜 예: "아이가 청소를 싫어하다가 도구를 발견하고 신나게 청소하며 깨끗해진 방을 본다"
                    - 좋은 예: "마법 빗자루를 들고 신나게 방을 청소하는 아이"
-                2. videoPrompt: 시간 흐름에 따른 동작과 변화 묘사 (스토리 전개 가능)
+                   - 좋은 예: "병아리들이 모이를 먹고 있는 장면"
+                   - 좋은 예: "엄마 닭이 병아리들과 함께 쉬는 모습"
+                2. videoPrompt: 시간 흐름에 따른 동작과 변화 묘사 (긴 서술 가능)
                 3. "A standard scene" 같은 generic 문장 금지
                 4. null, N/A 같은 표현 금지
                 5. 반드시 한국어로 작성하고 영어 금지
@@ -386,8 +485,8 @@ public class OpenAIService {
 
                 형식:
                 {
-                  "imagePrompt": "...",
-                  "videoPrompt": "..."
+                  "imagePrompt": "짧은 한 문장 (20단어 이내)",
+                  "videoPrompt": "긴 서술 가능"
                 }
                 """;
 
@@ -661,7 +760,7 @@ public class OpenAIService {
     // OpenAI API 공통 호출
     // ──────────────────────────────────────────
 
-    private String callOpenAI(String systemPrompt, String userPrompt) {
+    public String callOpenAI(String systemPrompt, String userPrompt) {
         try {
             log.info("Calling OpenAI API - systemPrompt.length={}, userPrompt.length={}",
                     systemPrompt.length(), userPrompt.length());

@@ -21,16 +21,30 @@ spring:
   main:
     allow-bean-definition-overriding: true
 
-# OpenAI API 설정
+# ==========================================
+# OpenAI API 설정 (기획 생성 전용)
+# ==========================================
 openai:
   api-key: ${OPENAI_API_KEY:sk-test-key-for-development}
 
-# Runway API 설정
+# ==========================================
+# ★★★ Leonardo AI 설정 (이미지 생성) ★★★
+# ==========================================
+leonardo:
+  api-key: ${LEONARDO_API_KEY:}
+  api-url: ${LEONARDO_API_URL:https://cloud.leonardo.ai/api/rest/v1}
+  model-id: ${LEONARDO_MODEL_ID:7b592283-e8a7-4c5a-9ba6-d18c31f258b9}
+
+# ==========================================
+# Runway API 설정 (비디오 생성)
+# ==========================================
 runway:
   api:
     key: ${RUNWAY_API_KEY:}
 
+# ==========================================
 # Cloudinary 설정 (이미지 영구 저장)
+# ==========================================
 cloudinary:
   cloud-name: ${CLOUDINARY_CLOUD_NAME:dbbkpdtqx}
   api-key: ${CLOUDINARY_API_KEY:497498544254817}
